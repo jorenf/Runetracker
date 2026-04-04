@@ -240,7 +240,16 @@ async function processPlayer(client, playerRow) {
   });
   logger.debug(`[Tracker] Snapshot saved for ${currentName}`);
 
-  // 7. Notify each guild
+  // 7. Notify each guild – skip entirely if nothing changed and no name change
+  const totalChanges = levelChanges.length + bossChanges.length + newAchievements.length + clueChanges.length;
+  if (!firstRun && totalChanges === 0 && !nameChanged) {
+    logger.info(`[Tracker] No changes for ${currentName} – skipping notifications`);
+    return {
+      success: true, displayName: currentName, firstRun: false, nameChanged: false,
+      changes: { levels: 0, bosses: 0, achievements: 0, clues: 0 },
+    };
+  }
+
   const guildRows = queries.getGuildsForPlayer.all(wom_id);
   logger.debug(`[Tracker] Sending notifications to ${guildRows.length} guild(s) for ${currentName}`);
 
