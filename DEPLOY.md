@@ -1,4 +1,68 @@
-# Deploying Muskebeers to an Ubuntu VPS
+# Deploying Muskebeers
+
+Two options: **Railway** (easiest, free tier available) or a **self-managed Ubuntu VPS**.
+
+---
+
+## Option A – Railway (recommended)
+
+Railway runs the bot as a container and manages restarts automatically.
+The only extra step is attaching a Volume so guild data survives redeploys.
+
+### A1. Create the project
+
+1. Go to **https://railway.app** and create a new project.
+2. Choose **Deploy from GitHub repo** → connect your fork of this repo.
+3. Railway detects `package.json` and will use `npm start` automatically.
+
+### A2. Add a persistent Volume
+
+> Without this step every redeploy wipes all guild configs and snapshots.
+
+1. In your Railway project, click **+ Add Service → Volume**.
+2. Name it `muskebeers-data` (or anything).
+3. Set the **Mount Path** to `/data`.
+4. Railway attaches the volume to the bot container automatically.
+
+### A3. Set environment variables
+
+In the Railway project → **Variables** tab, add:
+
+| Variable | Value |
+|---|---|
+| `DISCORD_TOKEN` | Your bot token |
+| `DISCORD_CLIENT_ID` | Your app's Client ID |
+| `DATA_DIR` | `/data` ← must match the Volume mount path |
+| `WOM_API_KEY` | Optional |
+| `TRACKER_INTERVAL_MS` | `300000` (5 min, or adjust) |
+| `WOM_REQUESTS_PER_MINUTE` | `40` |
+| `LOG_LEVEL` | `info` |
+
+### A4. Register slash commands (one-time)
+
+Railway's start command runs `npm start` (the bot). To register slash commands,
+run a one-off command in the Railway shell or locally with your production token:
+
+```bash
+# Locally with production .env values:
+DISCORD_TOKEN=... DISCORD_CLIENT_ID=... node deploy-commands.js
+```
+
+Or in Railway: open the service → **Settings → Start Command** → temporarily set
+it to `node deploy-commands.js`, deploy once, then revert to `npm start`.
+
+### A5. Deploy
+
+Push to your main branch — Railway redeploys automatically.  
+Check **Logs** to confirm the bot connects and the tracker starts.
+
+### A6. Discord Developer Portal settings
+
+Same as the VPS guide below (section 8).
+
+---
+
+## Option B – Ubuntu VPS (self-managed)
 
 This guide walks through a fresh Ubuntu 22.04 / 24.04 VPS setup from zero to a
 running, auto-restarting bot that survives reboots and serves any Discord server

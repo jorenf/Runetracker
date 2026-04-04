@@ -37,8 +37,7 @@ const TOTAL_LEVEL_MILESTONES = [500, 750, 1000, 1250, 1500, 1750, 2000, 2277];
 /** Boss KC values that trigger a milestone notification. */
 const BOSS_KC_MILESTONES = [100, 250, 500, 1000, 2000, 5000, 10000];
 
-const INTERVAL_MS      = parseInt(process.env.TRACKER_INTERVAL_MS  ?? '300000', 10);
-const REQUEST_DELAY_MS = parseInt(process.env.WOM_REQUEST_DELAY_MS ?? '1500',   10);
+const INTERVAL_MS = parseInt(process.env.TRACKER_INTERVAL_MS ?? '300000', 10);
 
 /** Clue scroll activity keys present in the WOM snapshot. */
 const CLUE_KEYS = [
@@ -76,8 +75,6 @@ export function getTrackerState() {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function extractSnapshot(player) {
   const snap = player?.latestSnapshot?.data;
@@ -399,7 +396,6 @@ async function runCycle() {
 
     for (const playerRow of uniquePlayers) {
       await processPlayer(_client, playerRow);
-      if (REQUEST_DELAY_MS > 0) await sleep(REQUEST_DELAY_MS);
     }
 
     // Auto weekly leaderboard (runs on Mondays, once per week per guild).
@@ -423,7 +419,7 @@ async function runCycle() {
  */
 export function startTracker(client) {
   _client = client;
-  logger.info(`[Tracker] Started. Interval: ${INTERVAL_MS / 1000}s | Request delay: ${REQUEST_DELAY_MS}ms`);
+  logger.info(`[Tracker] Started. Interval: ${INTERVAL_MS / 1000}s`);
 
   // Schedule next cycle and update _nextCycleAt on each tick.
   const schedule = () => {
