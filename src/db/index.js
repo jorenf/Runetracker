@@ -1,74 +1,98 @@
 /**
  * src/db/index.js
- * JSON-based data store using lowdb (pure JavaScript – no native compilation).
+ * Per-guild file storage.
  *
- * The public `queries` object intentionally mirrors the better-sqlite3
- * prepared-statement API (.run(), .get(), .all()) so all other files remain
- * unchanged.
+ * Layout on disk:
+ *   data/guilds/{guild_id}.json   – all settings for one Discord server
+ *   data/snapshots/{wom_id}.json  – last known WOM snapshot per player
+ *                                    (shared; a player tracked in multiple
+ *                                     guilds only needs one snapshot)
  *
- * Data is persisted to a JSON file on every write.
- *
- * Collections:
- *   guilds           – Discord server ID → announcement channel ID
- *   players          – WOM player ID + username mapped to a guild
- *   tracking_options – per-guild toggles for what categories to notify about
- *   player_snapshots – last known snapshot data per WOM player (for diffing)
+ * No cross-guild data ever leaks: every guild file is completely self-contained.
+ * The queries API keeps the same .run() / .get() / .all() surface so the rest
+ * of the codebase requires zero changes.
  */
 
-import { LowSync }      from 'lowdb';
-import { JSONFileSync } from 'lowdb/node';
-import { mkdirSync, existsSync } from 'fs';
-import { dirname }      from 'path';
-import logger           from '../utils/logger.js';
-
-const DB_PATH = process.env.DB_PATH ?? './data/muskebeers.json';
-
-// Ensure the data directory exists.
-const dir = dirname(DB_PATH);
-if (!existsSync(dir)) {
-  mkdirSync(dir, { recursive: true });
-}
-
-// Default structure written to the file on first run.
-const DEFAULT_DATA = {
-  guilds:           [],
-  players:          [],
-  tracking_options: [],
-  player_snapshots: [],
-  guild_admins:     [], // { guild_id, user_id }
-  weekly_posts:     [], // { guild_id, last_posted_at } – tracks Monday auto-post
-};
-
-const adapter = new JSONFileSync(DB_PATH);
-export const db = new LowSync(adapter, DEFAULT_DATA);
-
-// Load persisted data (or write defaults if the file is new).
-db.read();
-
-/** Flush in-memory state to disk. Called after every mutation. */
-function persist() {
-  db.write();
-}
-
-/** Shorthand to the live data object. */
-const d = () => db.data;
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { join } from 'path';
+import logger from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
-// initDatabase – no-op for lowdb (file is created automatically), kept for
-// API compatibility with the rest of the codebase.
+// Directories
 // ---------------------------------------------------------------------------
+
+const DATA_DIR      = process.env.DATA_DIR ?? './data';
+const GUILDS_DIR    = join(DATA_DIR, 'guilds');
+const SNAPSHOTS_DIR = join(DATA_DIR, 'snapshots');
+
+for (const dir of [GUILDS_DIR, SNAPSHOTS_DIR]) {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+}
+
+// ---------------------------------------------------------------------------
+// Low-level helpers
+// ---------------------------------------------------------------------------
+
+const DEFAULT_GUILD = () => ({
+  channel_id:       null,
+  players:          [],   // [{ wom_id, username }]
+  tracking_options: { track_levels: 1, track_bosses: 1, track_achievements: 1, track_clues: 1 },
+  guild_admins:     [],   // [{ user_id }]
+  weekly_post:      null, // { last_posted_at }
+});
+
+function guildPath(guildId)    { return join(GUILDS_DIR,    `${guildId}.json`); }
+function snapshotPath(womId)   { return join(SNAPSHOTS_DIR, `${womId}.json`); }
+
+function readJSON(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeJSON(path, data) {
+  writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+}
+
+/** Load a guild's data, creating defaults if the file doesn't exist. */
+function loadGuild(guildId) {
+  return readJSON(guildPath(guildId)) ?? { guild_id: guildId, ...DEFAULT_GUILD() };
+}
+
+/** Persist a guild data object. */
+function saveGuild(guild) {
+  writeJSON(guildPath(guild.guild_id), guild);
+}
+
+/** Mutate a guild with a callback, then persist atomically. */
+function mutateGuild(guildId, fn) {
+  const guild = loadGuild(guildId);
+  fn(guild);
+  saveGuild(guild);
+}
+
+/** Return the guild IDs of all stored guild files. */
+function allGuildIds() {
+  return readdirSync(GUILDS_DIR)
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.slice(0, -5));
+}
+
+// ---------------------------------------------------------------------------
+// initDatabase – creates directories, no-op if already set up.
+// ---------------------------------------------------------------------------
+
 export function initDatabase() {
-  if (!db.data.guild_admins)  { db.data.guild_admins  = []; db.write(); }
-  if (!db.data.weekly_posts)  { db.data.weekly_posts  = []; db.write(); }
-  logger.debug('Database ready (lowdb / JSON).');
+  for (const dir of [GUILDS_DIR, SNAPSHOTS_DIR]) {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  }
+  logger.debug(`[DB] Data dir: ${DATA_DIR} | guilds: ${allGuildIds().length}`);
 }
 
 // ---------------------------------------------------------------------------
-// queries
-// Mirrors the better-sqlite3 prepared-statement interface:
-//   .run(params)  – insert / update / delete, returns undefined
-//   .get(...)     – return the first matching object or null
-//   .all(...)     – return an array of matching objects
+// queries  (same .run() / .get() / .all() API as before)
 // ---------------------------------------------------------------------------
 
 export const queries = {
@@ -77,81 +101,91 @@ export const queries = {
 
   upsertGuild: {
     run({ guild_id, channel_id }) {
-      const idx = d().guilds.findIndex(g => g.guild_id === guild_id);
-      if (idx >= 0) {
-        d().guilds[idx].channel_id = channel_id;
-      } else {
-        d().guilds.push({ guild_id, channel_id });
-      }
-      persist();
+      mutateGuild(guild_id, g => { g.channel_id = channel_id; });
+      logger.debug(`[DB] upsertGuild ${guild_id} → channel ${channel_id}`);
     },
   },
 
   getGuild: {
-    get: (guild_id) =>
-      d().guilds.find(g => g.guild_id === guild_id) ?? null,
+    get(guild_id) {
+      const g = readJSON(guildPath(guild_id));
+      return g ? { guild_id, channel_id: g.channel_id } : null;
+    },
   },
 
   getAllGuilds: {
-    all: () => [...d().guilds],
+    all() {
+      return allGuildIds().map(id => {
+        const g = readJSON(guildPath(id));
+        return { guild_id: id, channel_id: g?.channel_id ?? null };
+      });
+    },
   },
 
   // ── Players ───────────────────────────────────────────────────────────────
 
   upsertPlayer: {
     run({ wom_id, username, guild_id }) {
-      const idx = d().players.findIndex(
-        p => p.wom_id === wom_id && p.guild_id === guild_id,
-      );
-      if (idx >= 0) {
-        d().players[idx].username = username;
-      } else {
-        d().players.push({ wom_id, username, guild_id });
-      }
-      persist();
+      mutateGuild(guild_id, g => {
+        const idx = g.players.findIndex(p => p.wom_id === wom_id);
+        if (idx >= 0) g.players[idx].username = username;
+        else          g.players.push({ wom_id, username });
+      });
     },
   },
 
   getPlayerByUsernameAndGuild: {
-    get: (username, guild_id) =>
-      d().players.find(
-        p =>
-          p.username.toLowerCase() === username.toLowerCase() &&
-          p.guild_id === guild_id,
-      ) ?? null,
+    get(username, guild_id) {
+      const g = loadGuild(guild_id);
+      const p = g.players.find(p => p.username.toLowerCase() === username.toLowerCase());
+      return p ? { ...p, guild_id } : null;
+    },
   },
 
   getPlayersByGuild: {
-    all: (guild_id) => d().players.filter(p => p.guild_id === guild_id),
+    all(guild_id) {
+      return loadGuild(guild_id).players.map(p => ({ ...p, guild_id }));
+    },
   },
 
   getAllPlayers: {
-    all: () => [...d().players],
+    all() {
+      const rows = [];
+      for (const id of allGuildIds()) {
+        const g = readJSON(guildPath(id));
+        if (!g) continue;
+        for (const p of g.players ?? []) rows.push({ ...p, guild_id: id });
+      }
+      return rows;
+    },
   },
 
   getGuildsForPlayer: {
-    // Returns objects shaped { guild_id } to match the SQL column projection.
-    all: (wom_id) =>
-      d()
-        .players.filter(p => p.wom_id === wom_id)
-        .map(p => ({ guild_id: p.guild_id })),
+    all(wom_id) {
+      const result = [];
+      for (const id of allGuildIds()) {
+        const g = readJSON(guildPath(id));
+        if (g?.players?.some(p => p.wom_id === wom_id)) result.push({ guild_id: id });
+      }
+      return result;
+    },
   },
 
   updatePlayerUsername: {
     run(username, wom_id) {
-      d().players.forEach(p => {
-        if (p.wom_id === wom_id) p.username = username;
-      });
-      persist();
+      for (const id of allGuildIds()) {
+        mutateGuild(id, g => {
+          g.players.forEach(p => { if (p.wom_id === wom_id) p.username = username; });
+        });
+      }
     },
   },
 
   deletePlayer: {
     run(wom_id, guild_id) {
-      db.data.players = d().players.filter(
-        p => !(p.wom_id === wom_id && p.guild_id === guild_id),
-      );
-      persist();
+      mutateGuild(guild_id, g => {
+        g.players = g.players.filter(p => p.wom_id !== wom_id);
+      });
     },
   },
 
@@ -159,107 +193,98 @@ export const queries = {
 
   upsertTrackingOptions: {
     run({ guild_id, track_levels, track_bosses, track_achievements, track_clues }) {
-      const idx = d().tracking_options.findIndex(o => o.guild_id === guild_id);
-      const row = { guild_id, track_levels, track_bosses, track_achievements, track_clues };
-      if (idx >= 0) {
-        d().tracking_options[idx] = row;
-      } else {
-        d().tracking_options.push(row);
-      }
-      persist();
+      mutateGuild(guild_id, g => {
+        g.tracking_options = { track_levels, track_bosses, track_achievements, track_clues };
+      });
     },
   },
 
   getTrackingOptions: {
-    get: (guild_id) =>
-      d().tracking_options.find(o => o.guild_id === guild_id) ?? null,
+    get(guild_id) {
+      const g = readJSON(guildPath(guild_id));
+      if (!g) return null;
+      return { guild_id, ...g.tracking_options };
+    },
   },
 
-  // ── Player snapshots ──────────────────────────────────────────────────────
+  // ── Player snapshots (shared, not per-guild) ──────────────────────────────
 
   upsertSnapshot: {
     run({ wom_id, username, snapshot_json, updated_at }) {
-      const idx = d().player_snapshots.findIndex(s => s.wom_id === wom_id);
-      const row = { wom_id, username, snapshot_json, updated_at };
-      if (idx >= 0) {
-        d().player_snapshots[idx] = row;
-      } else {
-        d().player_snapshots.push(row);
-      }
-      persist();
+      writeJSON(snapshotPath(wom_id), { wom_id, username, snapshot_json, updated_at });
     },
   },
 
   getSnapshot: {
-    get: (wom_id) =>
-      d().player_snapshots.find(s => s.wom_id === wom_id) ?? null,
+    get(wom_id) {
+      return readJSON(snapshotPath(wom_id));
+    },
   },
 
   // ── Guild admins ──────────────────────────────────────────────────────────
 
   addGuildAdmin: {
     run({ guild_id, user_id }) {
-      const exists = d().guild_admins.find(
-        a => a.guild_id === guild_id && a.user_id === user_id,
-      );
-      if (!exists) {
-        d().guild_admins.push({ guild_id, user_id });
-        persist();
-      }
+      mutateGuild(guild_id, g => {
+        if (!g.guild_admins.find(a => a.user_id === user_id)) {
+          g.guild_admins.push({ user_id });
+        }
+      });
     },
   },
 
   removeGuildAdmin: {
     run(guild_id, user_id) {
-      db.data.guild_admins = d().guild_admins.filter(
-        a => !(a.guild_id === guild_id && a.user_id === user_id),
-      );
-      persist();
+      mutateGuild(guild_id, g => {
+        g.guild_admins = g.guild_admins.filter(a => a.user_id !== user_id);
+      });
     },
   },
 
   isGuildAdmin: {
-    get: (guild_id, user_id) =>
-      d().guild_admins.find(
-        a => a.guild_id === guild_id && a.user_id === user_id,
-      ) ?? null,
+    get(guild_id, user_id) {
+      const g = readJSON(guildPath(guild_id));
+      return g?.guild_admins?.find(a => a.user_id === user_id) ?? null;
+    },
   },
 
   getGuildAdmins: {
-    all: (guild_id) => d().guild_admins.filter(a => a.guild_id === guild_id),
+    all(guild_id) {
+      return (readJSON(guildPath(guild_id))?.guild_admins ?? []).map(a => ({
+        guild_id, user_id: a.user_id,
+      }));
+    },
   },
 
   // ── Weekly posts ──────────────────────────────────────────────────────────
 
   getWeeklyPost: {
-    get: (guild_id) => d().weekly_posts.find(w => w.guild_id === guild_id) ?? null,
+    get(guild_id) {
+      const g = readJSON(guildPath(guild_id));
+      return g?.weekly_post ? { guild_id, ...g.weekly_post } : null;
+    },
   },
 
   setWeeklyPost: {
     run(guild_id, last_posted_at) {
-      const idx = d().weekly_posts.findIndex(w => w.guild_id === guild_id);
-      if (idx >= 0) {
-        d().weekly_posts[idx].last_posted_at = last_posted_at;
-      } else {
-        d().weekly_posts.push({ guild_id, last_posted_at });
-      }
-      persist();
+      mutateGuild(guild_id, g => { g.weekly_post = { last_posted_at }; });
     },
   },
 };
 
-/**
- * Convenience: get effective tracking options for a guild.
- * Falls back to all-enabled defaults if the guild has no custom options row.
- */
+// ---------------------------------------------------------------------------
+// Convenience export
+// ---------------------------------------------------------------------------
+
 export function getEffectiveOptions(guildId) {
-  return (
-    queries.getTrackingOptions.get(guildId) ?? {
-      guild_id:          guildId,
-      track_levels:      1,
-      track_bosses:      1,
-      track_achievements: 1,
-      track_clues:       1,
-    }
-  );
+  return queries.getTrackingOptions.get(guildId) ?? {
+    guild_id:           guildId,
+    track_levels:       1,
+    track_bosses:       1,
+    track_achievements: 1,
+    track_clues:        1,
+  };
 }
+
+// Legacy export kept for notifier / tracker compatibility.
+export const db = { data: null }; // unused; kept so no import breaks

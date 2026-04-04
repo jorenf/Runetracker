@@ -10,6 +10,7 @@
  */
 
 import logger from '../utils/logger.js';
+import { womLimiter } from '../utils/ratelimiter.js';
 
 const BASE_URL = 'https://api.wiseoldman.net/v2';
 
@@ -18,39 +19,42 @@ const API_KEY = process.env.WOM_API_KEY;
 
 /**
  * Internal: fire an HTTP request and return parsed JSON.
+ * All calls are routed through the shared rate-limiter queue.
  * Throws on non-2xx responses with a helpful message.
  *
  * @param {string} path    – URL path starting with /
  * @param {object} [opts]  – fetch options (method, body, etc.)
  */
 async function request(path, opts = {}) {
-  const url = `${BASE_URL}${path}`;
-  const headers = { 'Content-Type': 'application/json' };
-  if (API_KEY) headers['x-api-key'] = API_KEY;
+  return womLimiter.enqueue(async () => {
+    const url = `${BASE_URL}${path}`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (API_KEY) headers['x-api-key'] = API_KEY;
 
-  logger.debug(`WOM ${opts.method ?? 'GET'} ${url}`);
+    logger.debug(`WOM ${opts.method ?? 'GET'} ${url}`);
 
-  let response;
-  try {
-    response = await fetch(url, { ...opts, headers });
-  } catch (networkErr) {
-    throw new Error(`Network error reaching WOM API: ${networkErr.message}`);
-  }
+    let response;
+    try {
+      response = await fetch(url, { ...opts, headers });
+    } catch (networkErr) {
+      throw new Error(`Network error reaching WOM API: ${networkErr.message}`);
+    }
 
-  // Parse body regardless of status so we can include error messages.
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error(`WOM API returned non-JSON response (HTTP ${response.status})`);
-  }
+    // Parse body regardless of status so we can include error messages.
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error(`WOM API returned non-JSON response (HTTP ${response.status})`);
+    }
 
-  if (!response.ok) {
-    const msg = body?.message ?? body?.error ?? `HTTP ${response.status}`;
-    throw new Error(`WOM API error: ${msg}`);
-  }
+    if (!response.ok) {
+      const msg = body?.message ?? body?.error ?? `HTTP ${response.status}`;
+      throw new Error(`WOM API error: ${msg}`);
+    }
 
-  return body;
+    return body;
+  });
 }
 
 // ---------------------------------------------------------------------------
