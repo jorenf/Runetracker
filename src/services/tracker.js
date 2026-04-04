@@ -1,17 +1,20 @@
 /**
  * src/services/tracker.js
- * Background polling loop.
+ * Background polling loop + manual trigger exports.
  *
- * Every TRACKER_INTERVAL_MS milliseconds the tracker:
- *   1. Fetches all distinct tracked players from the database.
- *   2. Asks WiseOldMan to refresh each player's stats.
- *   3. Diffs the new snapshot against the stored one.
- *   4. For each guild that tracks the player, checks per-guild options and
- *      fires the appropriate Discord notifications.
- *   5. Persists the new snapshot so the next run has a baseline.
+ * Automatic cycle (every TRACKER_INTERVAL_MS):
+ *   1. Deduplicates all tracked players across guilds.
+ *   2. Asks WiseOldMan to refresh each player.
+ *   3. Diffs the new snapshot against the stored baseline.
+ *   4. Fires Discord notifications per guild based on tracking options.
+ *   5. Persists the new snapshot.
  *
- * A small delay (WOM_REQUEST_DELAY_MS) is inserted between WOM API calls to
- * stay within the API's rate limit.
+ * Manual triggers (used by /checkupdate):
+ *   triggerPlayer(username, guildId) – process one specific player
+ *   triggerFullCycle()               – run the full cycle immediately
+ *
+ * Tracker state (used by /status):
+ *   getTrackerState() – returns last/next cycle timestamps + running flag
  */
 
 import { queries, getEffectiveOptions } from '../db/index.js';
@@ -25,8 +28,8 @@ import {
 } from './notifier.js';
 import logger from '../utils/logger.js';
 
-const INTERVAL_MS      = parseInt(process.env.TRACKER_INTERVAL_MS   ?? '300000', 10);
-const REQUEST_DELAY_MS = parseInt(process.env.WOM_REQUEST_DELAY_MS  ?? '1500',   10);
+const INTERVAL_MS      = parseInt(process.env.TRACKER_INTERVAL_MS  ?? '300000', 10);
+const REQUEST_DELAY_MS = parseInt(process.env.WOM_REQUEST_DELAY_MS ?? '1500',   10);
 
 /** Clue scroll activity keys present in the WOM snapshot. */
 const CLUE_KEYS = [
@@ -40,23 +43,36 @@ const CLUE_KEYS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Module-level state (readable via getTrackerState)
+// ---------------------------------------------------------------------------
+
+let _client       = null;  // stored so manual triggers can reuse it
+let _lastCycleAt  = null;  // Date of last completed cycle
+let _nextCycleAt  = null;  // Date of next scheduled cycle
+let _cycleRunning = false; // guard against concurrent runs
+
+/**
+ * Returns a snapshot of the current tracker state.
+ * Used by the /status command.
+ */
+export function getTrackerState() {
+  return {
+    lastCycleAt:  _lastCycleAt,
+    nextCycleAt:  _nextCycleAt,
+    cycleRunning: _cycleRunning,
+    intervalMs:   INTERVAL_MS,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Sleep for `ms` milliseconds. */
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-/**
- * Extract a consistent snapshot summary from a WOM player object.
- * We only persist the data we need for diffing to keep the stored JSON small.
- *
- * @param {object} player  – Full WOM Player response
- * @returns {{ skills, bosses, activities, username } | null}
- */
 function extractSnapshot(player) {
   const snap = player?.latestSnapshot?.data;
   if (!snap) return null;
-
   return {
     username:   player.username,
     skills:     snap.skills     ?? {},
@@ -66,26 +82,20 @@ function extractSnapshot(player) {
 }
 
 // ---------------------------------------------------------------------------
-// Diff functions – each returns an array of change objects.
+// Diff functions
 // ---------------------------------------------------------------------------
 
-/**
- * Compare skill levels between two snapshots.
- * Only reports level increases (not raw XP changes without a level-up) to
- * avoid spammy notifications.
- */
 function diffSkills(oldSnap, newSnap) {
   const changes = [];
   for (const [key, newData] of Object.entries(newSnap.skills)) {
-    if (key === 'overall') continue; // total level handled implicitly
-    const oldData = oldSnap.skills[key];
+    if (key === 'overall') continue;
+    const oldData  = oldSnap.skills[key];
     if (!oldData) continue;
-
     const oldLevel = oldData.level ?? 0;
     const newLevel = newData.level ?? 0;
     if (newLevel > oldLevel) {
       changes.push({
-        skill:    key,
+        skill: key,
         oldLevel,
         newLevel,
         oldXp: oldData.experience ?? 0,
@@ -96,16 +106,11 @@ function diffSkills(oldSnap, newSnap) {
   return changes;
 }
 
-/**
- * Compare boss kill counts between two snapshots.
- * -1 in WOM means "unranked / no data"; treat it as 0 for comparisons.
- */
 function diffBosses(oldSnap, newSnap) {
   const changes = [];
   for (const [key, newData] of Object.entries(newSnap.bosses)) {
-    const oldData = oldSnap.bosses[key];
+    const oldData  = oldSnap.bosses[key];
     if (!oldData) continue;
-
     const oldKills = Math.max(oldData.kills ?? -1, 0);
     const newKills = Math.max(newData.kills ?? -1, 0);
     if (newKills > oldKills) {
@@ -115,17 +120,12 @@ function diffBosses(oldSnap, newSnap) {
   return changes;
 }
 
-/**
- * Compare clue scroll completions.
- * -1 means unranked; treat as 0.
- */
 function diffClues(oldSnap, newSnap) {
   const changes = [];
   for (const key of CLUE_KEYS) {
-    const oldData = oldSnap.activities[key];
-    const newData = newSnap.activities[key];
+    const oldData  = oldSnap.activities[key];
+    const newData  = newSnap.activities[key];
     if (!oldData || !newData) continue;
-
     const oldScore = Math.max(oldData.score ?? -1, 0);
     const newScore = Math.max(newData.score ?? -1, 0);
     if (newScore > oldScore) {
@@ -135,14 +135,6 @@ function diffClues(oldSnap, newSnap) {
   return changes;
 }
 
-/**
- * Find achievements that appear in `newList` but not in `oldList`.
- * We use `name` as the unique key since achievement names are stable.
- *
- * @param {Array} oldList  – previously stored achievements
- * @param {Array} newList  – freshly fetched achievements
- * @returns {Array}
- */
 function diffAchievements(oldList, newList) {
   const oldNames = new Set((oldList ?? []).map(a => a.name));
   return newList.filter(a => !oldNames.has(a.name));
@@ -150,139 +142,226 @@ function diffAchievements(oldList, newList) {
 
 // ---------------------------------------------------------------------------
 // Core: process a single player
+// Returns a result object so manual triggers can report back to the user.
 // ---------------------------------------------------------------------------
 
 /**
- * Refresh one player's data and fire notifications for all guilds that track
- * them.  Handles username changes transparently.
+ * @typedef {object} ProcessResult
+ * @property {boolean} success
+ * @property {string}  displayName
+ * @property {boolean} firstRun      – true if this was the first snapshot (no diff yet)
+ * @property {boolean} nameChanged
+ * @property {string}  [oldName]
+ * @property {{ levels:number, bosses:number, achievements:number, clues:number }} changes
+ * @property {string}  [error]
+ */
+
+/**
+ * Refresh one player and send notifications to all guilds tracking them.
  *
  * @param {import('discord.js').Client} client
- * @param {object} playerRow  – Row from the `players` table (any guild)
+ * @param {object} playerRow  – { wom_id, username, guild_id }
+ * @returns {Promise<ProcessResult>}
  */
 async function processPlayer(client, playerRow) {
   const { wom_id, username } = playerRow;
 
-  // --- 1. Fetch fresh data from WOM ---
+  logger.info(`[Tracker] Checking player: ${username} (wom_id=${wom_id})`);
+
+  // 1. Refresh via WOM
   let freshPlayer;
   try {
     freshPlayer = await updatePlayer(username);
+    logger.debug(`[Tracker] WOM update OK for ${username}`);
   } catch (err) {
-    logger.warn(`Failed to update player ${username} (wom_id=${wom_id}): ${err.message}`);
-    return;
+    logger.warn(`[Tracker] WOM update FAILED for ${username}: ${err.message}`);
+    return { success: false, displayName: username, error: err.message };
   }
 
   const freshSnap = extractSnapshot(freshPlayer);
   if (!freshSnap) {
-    logger.warn(`No snapshot data for player ${username}.`);
-    return;
+    logger.warn(`[Tracker] No snapshot data returned for ${username}`);
+    return { success: false, displayName: username, error: 'No snapshot data from WOM.' };
   }
 
-  // --- 2. Check for a username change ---
+  // 2. Username change detection
   const currentName = freshPlayer.username;
   const nameChanged = currentName.toLowerCase() !== username.toLowerCase();
   if (nameChanged) {
-    logger.info(`Username change detected: ${username} → ${currentName}`);
+    logger.info(`[Tracker] Username change: ${username} → ${currentName}`);
     queries.updatePlayerUsername.run(currentName, wom_id);
   }
 
-  // --- 3. Load the previous snapshot for diffing ---
-  const storedRow   = queries.getSnapshot.get(wom_id);
-  const storedSnap  = storedRow ? JSON.parse(storedRow.snapshot_json) : null;
-
-  // Fetch fresh achievements so we can diff them.
-  let freshAchievements = [];
-  try {
-    freshAchievements = await getPlayerAchievements(currentName);
-  } catch (err) {
-    logger.warn(`Could not fetch achievements for ${currentName}: ${err.message}`);
-  }
-
+  // 3. Load stored baseline
+  const storedRow          = queries.getSnapshot.get(wom_id);
+  const storedSnap         = storedRow ? JSON.parse(storedRow.snapshot_json) : null;
   const storedAchievements = storedRow
     ? (JSON.parse(storedRow.snapshot_json).achievements ?? [])
     : [];
 
-  // --- 4. Compute diffs (only if we have a baseline) ---
-  let levelChanges  = [];
-  let bossChanges   = [];
-  let clueChanges   = [];
+  // 4. Fetch achievements
+  let freshAchievements = [];
+  try {
+    freshAchievements = await getPlayerAchievements(currentName);
+    logger.debug(`[Tracker] Fetched ${freshAchievements.length} achievements for ${currentName}`);
+  } catch (err) {
+    logger.warn(`[Tracker] Could not fetch achievements for ${currentName}: ${err.message}`);
+  }
+
+  // 5. Compute diffs
+  let levelChanges    = [];
+  let bossChanges     = [];
+  let clueChanges     = [];
   let newAchievements = [];
+  let firstRun        = false;
 
   if (storedSnap) {
     levelChanges    = diffSkills(storedSnap, freshSnap);
     bossChanges     = diffBosses(storedSnap, freshSnap);
     clueChanges     = diffClues(storedSnap, freshSnap);
     newAchievements = diffAchievements(storedAchievements, freshAchievements);
+
+    logger.info(
+      `[Tracker] Diff for ${currentName}: ` +
+      `levels=${levelChanges.length}, bosses=${bossChanges.length}, ` +
+      `achievements=${newAchievements.length}, clues=${clueChanges.length}`,
+    );
   } else {
-    logger.info(`First snapshot stored for player ${currentName} (wom_id=${wom_id}). Notifications start next run.`);
+    firstRun = true;
+    logger.info(`[Tracker] First snapshot stored for ${currentName} – notifications start next cycle`);
   }
 
-  // --- 5. Persist the new snapshot before sending notifications ---
-  //    (We update first so even if Discord calls fail, we don't re-notify.)
+  // 6. Persist new snapshot (before notifying – prevents double-notify on Discord errors)
   queries.upsertSnapshot.run({
     wom_id,
     username:      currentName,
     snapshot_json: JSON.stringify({ ...freshSnap, achievements: freshAchievements }),
     updated_at:    Date.now(),
   });
+  logger.debug(`[Tracker] Snapshot saved for ${currentName}`);
 
-  // --- 6. For every guild tracking this player, send applicable notifications ---
+  // 7. Notify each guild
   const guildRows = queries.getGuildsForPlayer.all(wom_id);
+  logger.debug(`[Tracker] Sending notifications to ${guildRows.length} guild(s) for ${currentName}`);
 
   for (const { guild_id } of guildRows) {
     const opts = getEffectiveOptions(guild_id);
 
-    // Username change notification (always sent when detected).
     if (nameChanged) {
       await notifyNameChange(client, guild_id, username, currentName);
     }
-
-    if (opts.track_levels      && levelChanges.length)    await notifyLevels(client, guild_id, currentName, levelChanges);
-    if (opts.track_bosses      && bossChanges.length)     await notifyBosses(client, guild_id, currentName, bossChanges);
-    if (opts.track_achievements && newAchievements.length) await notifyAchievements(client, guild_id, currentName, newAchievements);
-    if (opts.track_clues       && clueChanges.length)     await notifyClues(client, guild_id, currentName, clueChanges);
+    if (opts.track_levels       && levelChanges.length)     await notifyLevels(client, guild_id, currentName, levelChanges);
+    if (opts.track_bosses       && bossChanges.length)      await notifyBosses(client, guild_id, currentName, bossChanges);
+    if (opts.track_achievements && newAchievements.length)  await notifyAchievements(client, guild_id, currentName, newAchievements);
+    if (opts.track_clues        && clueChanges.length)      await notifyClues(client, guild_id, currentName, clueChanges);
   }
+
+  return {
+    success:     true,
+    displayName: currentName,
+    firstRun,
+    nameChanged,
+    oldName:     nameChanged ? username : undefined,
+    changes: {
+      levels:       levelChanges.length,
+      bosses:       bossChanges.length,
+      achievements: newAchievements.length,
+      clues:        clueChanges.length,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Main tracking loop
+// Cycle runner
 // ---------------------------------------------------------------------------
 
-/**
- * Start the background tracking interval.
- * Should be called once the Discord client is ready.
- *
- * @param {import('discord.js').Client} client
- */
-export function startTracker(client) {
-  logger.info(`Tracker started. Poll interval: ${INTERVAL_MS / 1000}s, request delay: ${REQUEST_DELAY_MS}ms`);
+async function runCycle() {
+  if (_cycleRunning) {
+    logger.warn('[Tracker] Cycle already in progress – skipping this tick.');
+    return;
+  }
 
-  const runCycle = async () => {
-    logger.info('--- Tracker cycle start ---');
+  _cycleRunning = true;
+  const startedAt = new Date();
+  logger.info(`[Tracker] ======= Cycle START at ${startedAt.toISOString()} =======`);
 
-    // Deduplicate: each WOM player ID only needs updating once even if tracked
-    // in multiple guilds.
-    const allPlayers = queries.getAllPlayers.all();
-    const seen = new Set();
+  try {
+    const allPlayers    = queries.getAllPlayers.all();
+    const seen          = new Set();
     const uniquePlayers = allPlayers.filter(p => {
       if (seen.has(p.wom_id)) return false;
       seen.add(p.wom_id);
       return true;
     });
 
-    logger.info(`Processing ${uniquePlayers.length} unique tracked player(s)…`);
+    logger.info(`[Tracker] ${uniquePlayers.length} unique player(s) to process`);
 
     for (const playerRow of uniquePlayers) {
-      await processPlayer(client, playerRow);
-      // Throttle to avoid hammering the WOM API.
+      await processPlayer(_client, playerRow);
       if (REQUEST_DELAY_MS > 0) await sleep(REQUEST_DELAY_MS);
     }
+  } finally {
+    _cycleRunning = false;
+    _lastCycleAt  = new Date();
+    logger.info(`[Tracker] ======= Cycle DONE at ${_lastCycleAt.toISOString()} =======`);
+  }
+}
 
-    logger.info('--- Tracker cycle complete ---');
+// ---------------------------------------------------------------------------
+// Public exports
+// ---------------------------------------------------------------------------
+
+/**
+ * Start the automatic polling interval.  Must be called once after Discord login.
+ */
+export function startTracker(client) {
+  _client = client;
+  logger.info(`[Tracker] Started. Interval: ${INTERVAL_MS / 1000}s | Request delay: ${REQUEST_DELAY_MS}ms`);
+
+  // Schedule next cycle and update _nextCycleAt on each tick.
+  const schedule = () => {
+    _nextCycleAt = new Date(Date.now() + INTERVAL_MS);
+    logger.info(`[Tracker] Next automatic cycle at ${_nextCycleAt.toISOString()}`);
+    setTimeout(async () => {
+      await runCycle().catch(err => logger.error('[Tracker] Cycle error:', err));
+      schedule(); // reschedule after each run
+    }, INTERVAL_MS);
   };
 
-  // Run once immediately, then on the configured interval.
-  runCycle().catch(err => logger.error('Tracker cycle error:', err));
-  setInterval(() => {
-    runCycle().catch(err => logger.error('Tracker cycle error:', err));
-  }, INTERVAL_MS);
+  // Run immediately on startup, then start the schedule.
+  _nextCycleAt = new Date(Date.now() + INTERVAL_MS);
+  runCycle()
+    .catch(err => logger.error('[Tracker] Initial cycle error:', err))
+    .finally(() => schedule());
+}
+
+/**
+ * Manually trigger a full cycle (all tracked players).
+ * Used by /checkupdate with no username argument.
+ */
+export async function triggerFullCycle() {
+  if (!_client) throw new Error('Tracker not started yet.');
+  logger.info('[Tracker] Manual full cycle triggered');
+  await runCycle();
+  return queries.getAllPlayers.all().length;
+}
+
+/**
+ * Manually trigger a refresh for one specific player in a guild.
+ * Used by /checkupdate <username>.
+ *
+ * @param {string} username
+ * @param {string} guildId
+ * @returns {Promise<ProcessResult>}
+ */
+export async function triggerPlayer(username, guildId) {
+  if (!_client) throw new Error('Tracker not started yet.');
+
+  const playerRow = queries.getPlayerByUsernameAndGuild.get(username, guildId);
+  if (!playerRow) {
+    return { success: false, displayName: username, error: `Player **${username}** is not tracked in this server.` };
+  }
+
+  logger.info(`[Tracker] Manual trigger for player ${username} in guild ${guildId}`);
+  return processPlayer(_client, playerRow);
 }

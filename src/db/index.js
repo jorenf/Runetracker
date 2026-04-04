@@ -35,6 +35,7 @@ const DEFAULT_DATA = {
   players:          [],
   tracking_options: [],
   player_snapshots: [],
+  guild_admins:     [], // { guild_id, user_id } – extra bot admins per server
 };
 
 const adapter = new JSONFileSync(DB_PATH);
@@ -56,6 +57,11 @@ const d = () => db.data;
 // API compatibility with the rest of the codebase.
 // ---------------------------------------------------------------------------
 export function initDatabase() {
+  // Migrate existing DB files that pre-date the guild_admins collection.
+  if (!db.data.guild_admins) {
+    db.data.guild_admins = [];
+    db.write();
+  }
   logger.debug('Database ready (lowdb / JSON).');
 }
 
@@ -189,6 +195,40 @@ export const queries = {
   getSnapshot: {
     get: (wom_id) =>
       d().player_snapshots.find(s => s.wom_id === wom_id) ?? null,
+  },
+
+  // ── Guild admins ──────────────────────────────────────────────────────────
+
+  addGuildAdmin: {
+    run({ guild_id, user_id }) {
+      const exists = d().guild_admins.find(
+        a => a.guild_id === guild_id && a.user_id === user_id,
+      );
+      if (!exists) {
+        d().guild_admins.push({ guild_id, user_id });
+        persist();
+      }
+    },
+  },
+
+  removeGuildAdmin: {
+    run(guild_id, user_id) {
+      db.data.guild_admins = d().guild_admins.filter(
+        a => !(a.guild_id === guild_id && a.user_id === user_id),
+      );
+      persist();
+    },
+  },
+
+  isGuildAdmin: {
+    get: (guild_id, user_id) =>
+      d().guild_admins.find(
+        a => a.guild_id === guild_id && a.user_id === user_id,
+      ) ?? null,
+  },
+
+  getGuildAdmins: {
+    all: (guild_id) => d().guild_admins.filter(a => a.guild_id === guild_id),
   },
 };
 
