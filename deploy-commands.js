@@ -16,7 +16,7 @@
 import 'dotenv/config';
 import { REST, Routes } from 'discord.js';
 import { readdirSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +32,7 @@ if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
 const commands = [];
 const commandsPath = join(__dirname, 'src', 'commands');
 for (const file of readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
-  const { default: command } = await import(join(commandsPath, file));
+  const { default: command } = await import(pathToFileURL(join(commandsPath, file)).href);
   if (command?.data) {
     commands.push(command.data.toJSON());
     console.log(`  + ${command.data.name}`);

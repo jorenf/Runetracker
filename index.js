@@ -7,7 +7,7 @@
 import 'dotenv/config';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import { readdirSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase } from './src/db/index.js';
 import { startTracker } from './src/services/tracker.js';
@@ -42,7 +42,7 @@ client.commands = new Collection();
 // ---------------------------------------------------------------------------
 const commandsPath = join(__dirname, 'src', 'commands');
 for (const file of readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
-  const { default: command } = await import(join(commandsPath, file));
+  const { default: command } = await import(pathToFileURL(join(commandsPath, file)).href);
   if (command?.data && command?.execute) {
     client.commands.set(command.data.name, command);
     logger.debug(`Loaded command: ${command.data.name}`);
@@ -56,7 +56,7 @@ for (const file of readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
 // ---------------------------------------------------------------------------
 const eventsPath = join(__dirname, 'src', 'events');
 for (const file of readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
-  const { default: event } = await import(join(eventsPath, file));
+  const { default: event } = await import(pathToFileURL(join(eventsPath, file)).href);
   if (event?.name && event?.execute) {
     if (event.once) {
       client.once(event.name, (...args) => event.execute(...args, client));
