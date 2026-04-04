@@ -59,33 +59,33 @@ async function sendEmbeds(client, guildId, embeds) {
 // ---------------------------------------------------------------------------
 
 export async function notifyLevels(client, guildId, displayName, changes) {
-  if (!changes?.length) return; // ← spam guard
-  const embed = buildLevelEmbed(displayName, changes);
-  await sendEmbeds(client, guildId, [embed]);
+  if (!changes?.length) return;
+  // One embed per skill – sent together in one message (same timestamp).
+  const embeds = changes.map(c => buildLevelEmbed(displayName, c));
+  await sendEmbeds(client, guildId, embeds);
   logger.info(`[Notifier] Level-up sent for ${displayName} in guild ${guildId} (${changes.length} skill(s))`);
 }
 
 export async function notifyBosses(client, guildId, displayName, changes) {
   if (!changes?.length) return;
-  const embed = buildBossEmbed(displayName, changes);
-  await sendEmbeds(client, guildId, [embed]);
+  // Boss kills grouped in one card (ScapeBot style).
+  await sendEmbeds(client, guildId, [buildBossEmbed(displayName, changes)]);
   logger.info(`[Notifier] Boss kill sent for ${displayName} in guild ${guildId} (${changes.length} boss(es))`);
 }
 
 export async function notifyAchievements(client, guildId, displayName, newAchievements) {
   if (!newAchievements?.length) return;
-  // Discord embed description limit: chunk into groups of 25 lines.
-  for (let i = 0; i < newAchievements.length; i += 25) {
-    const embed = buildAchievementEmbed(displayName, newAchievements.slice(i, i + 25));
-    await sendEmbeds(client, guildId, [embed]);
-  }
+  // One embed per achievement, max 10 per message.
+  const embeds = newAchievements.map(a => buildAchievementEmbed(displayName, a));
+  await sendEmbeds(client, guildId, embeds);
   logger.info(`[Notifier] Achievement sent for ${displayName} in guild ${guildId} (${newAchievements.length})`);
 }
 
 export async function notifyClues(client, guildId, displayName, changes) {
   if (!changes?.length) return;
-  const embed = buildClueEmbed(displayName, changes);
-  await sendEmbeds(client, guildId, [embed]);
+  // One embed per clue tier.
+  const embeds = changes.map(c => buildClueEmbed(displayName, c));
+  await sendEmbeds(client, guildId, embeds);
   logger.info(`[Notifier] Clue scroll sent for ${displayName} in guild ${guildId} (${changes.length} tier(s))`);
 }
 

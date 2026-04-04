@@ -65,53 +65,69 @@ function base(color, lines, thumbnailUrl) {
 // ---------------------------------------------------------------------------
 
 /**
- * Level-up embed.
- * Uses the skill icon of the first (highest-gain) skill as thumbnail.
+ * Level-up embed – ONE embed per skill change.
+ * Call once per change; the notifier maps the array.
+ *
+ * @param {string} displayName
+ * @param {{ skill, oldLevel, newLevel }} change
  */
-export function buildLevelEmbed(displayName, changes) {
-  // Sort by levels gained desc so the biggest gain drives the thumbnail.
-  const sorted = [...changes].sort((a, b) => (b.newLevel - b.oldLevel) - (a.newLevel - a.oldLevel));
-  const lines = sorted.map(c => {
-    const gained = c.newLevel - c.oldLevel;
-    const plural = gained === 1 ? 'level' : 'levels';
-    return `**${displayName}** has gained **${gained}** ${plural} in **${formatMetricName(c.skill)}** and is now level **${c.newLevel}**`;
-  });
-  return base(COLORS.skill, lines, getSkillIcon(sorted[0].skill));
+export function buildLevelEmbed(displayName, change) {
+  const gained = change.newLevel - change.oldLevel;
+  const plural = gained === 1 ? 'level' : 'levels';
+  return base(
+    COLORS.skill,
+    [`**${displayName}** has gained **${gained}** ${plural} in **${formatMetricName(change.skill)}** and is now level **${change.newLevel}**`],
+    getSkillIcon(change.skill),
+  );
 }
 
 /**
- * Boss kill embed.
+ * Boss kill embed – grouped per player (ScapeBot style: multiple bosses in one card).
+ * "roryhole has completed...\nThe Royal Titans 13 more times...\nTombs of Amascut again..."
+ *
+ * @param {string} displayName
+ * @param {Array<{ boss, oldKills, newKills }>} changes
  */
 export function buildBossEmbed(displayName, changes) {
-  const lines = changes.map(c => {
+  const header = `**${displayName}** has completed…`;
+  const lines  = changes.map(c => {
     const boss   = formatMetricName(c.boss);
     const gained = c.newKills - c.oldKills;
     const times  = gained === 1 ? 'again' : `**${gained}** more times`;
-    return `**${displayName}** has defeated **${boss}** ${times} for a total of **${formatNumber(c.newKills)}**`;
+    return `**${boss}** ${times} for a total of **${formatNumber(c.newKills)}**`;
   });
-  return base(COLORS.boss, lines, getBossIcon(changes[0].boss));
+  return base(COLORS.boss, [header, ...lines], getBossIcon(changes[0].boss));
 }
 
 /**
- * Achievement embed.
+ * Achievement embed – ONE embed per achievement.
+ *
+ * @param {string} displayName
+ * @param {{ name, metric, measure, threshold }} achievement
  */
-export function buildAchievementEmbed(displayName, achievements) {
-  const lines = achievements.map(a => `**${displayName}** has unlocked: **${a.name}**`);
-  return base(COLORS.achievement, lines);
+export function buildAchievementEmbed(displayName, achievement) {
+  return base(
+    COLORS.achievement,
+    [`**${displayName}** has unlocked: **${achievement.name}**`],
+  );
 }
 
 /**
- * Clue scroll embed.
+ * Clue scroll embed – ONE embed per tier.
+ *
+ * @param {string} displayName
+ * @param {{ tier, oldScore, newScore }} change
  */
-export function buildClueEmbed(displayName, changes) {
-  const lines = changes.map(c => {
-    const tier   = CLUE_TIER[c.tier] ?? formatMetricName(c.tier);
-    const gained = c.newScore - c.oldScore;
-    const qty    = gained === 1 ? 'another' : `**${gained}** more`;
-    const noun   = gained === 1 ? 'clue' : 'clues';
-    return `**${displayName}** has completed ${qty} **${tier}** ${noun} for a total of **${formatNumber(c.newScore)}**`;
-  });
-  return base(COLORS.clue, lines, getClueIcon(changes[0].tier));
+export function buildClueEmbed(displayName, change) {
+  const tier   = CLUE_TIER[change.tier] ?? formatMetricName(change.tier);
+  const gained = change.newScore - change.oldScore;
+  const qty    = gained === 1 ? 'another' : `**${gained}** more`;
+  const noun   = gained === 1 ? 'clue' : 'clues';
+  return base(
+    COLORS.clue,
+    [`**${displayName}** has completed ${qty} **${tier}** ${noun} for a total of **${formatNumber(change.newScore)}**`],
+    getClueIcon(change.tier),
+  );
 }
 
 /**
