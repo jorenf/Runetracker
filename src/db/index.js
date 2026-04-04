@@ -35,7 +35,8 @@ const DEFAULT_DATA = {
   players:          [],
   tracking_options: [],
   player_snapshots: [],
-  guild_admins:     [], // { guild_id, user_id } – extra bot admins per server
+  guild_admins:     [], // { guild_id, user_id }
+  weekly_posts:     [], // { guild_id, last_posted_at } – tracks Monday auto-post
 };
 
 const adapter = new JSONFileSync(DB_PATH);
@@ -57,11 +58,8 @@ const d = () => db.data;
 // API compatibility with the rest of the codebase.
 // ---------------------------------------------------------------------------
 export function initDatabase() {
-  // Migrate existing DB files that pre-date the guild_admins collection.
-  if (!db.data.guild_admins) {
-    db.data.guild_admins = [];
-    db.write();
-  }
+  if (!db.data.guild_admins)  { db.data.guild_admins  = []; db.write(); }
+  if (!db.data.weekly_posts)  { db.data.weekly_posts  = []; db.write(); }
   logger.debug('Database ready (lowdb / JSON).');
 }
 
@@ -229,6 +227,24 @@ export const queries = {
 
   getGuildAdmins: {
     all: (guild_id) => d().guild_admins.filter(a => a.guild_id === guild_id),
+  },
+
+  // ── Weekly posts ──────────────────────────────────────────────────────────
+
+  getWeeklyPost: {
+    get: (guild_id) => d().weekly_posts.find(w => w.guild_id === guild_id) ?? null,
+  },
+
+  setWeeklyPost: {
+    run(guild_id, last_posted_at) {
+      const idx = d().weekly_posts.findIndex(w => w.guild_id === guild_id);
+      if (idx >= 0) {
+        d().weekly_posts[idx].last_posted_at = last_posted_at;
+      } else {
+        d().weekly_posts.push({ guild_id, last_posted_at });
+      }
+      persist();
+    },
   },
 };
 

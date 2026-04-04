@@ -25,8 +25,17 @@ import {
   notifyAchievements,
   notifyClues,
   notifyNameChange,
+  notifyLevel99,
+  notifyTotalLevelMilestone,
+  notifyBossKCMilestone,
 } from './notifier.js';
 import logger from '../utils/logger.js';
+
+/** Total level values that trigger a special milestone notification. */
+const TOTAL_LEVEL_MILESTONES = [500, 750, 1000, 1250, 1500, 1750, 2000, 2277];
+
+/** Boss KC values that trigger a milestone notification. */
+const BOSS_KC_MILESTONES = [100, 250, 500, 1000, 2000, 5000, 10000];
 
 const INTERVAL_MS      = parseInt(process.env.TRACKER_INTERVAL_MS  ?? '300000', 10);
 const REQUEST_DELAY_MS = parseInt(process.env.WOM_REQUEST_DELAY_MS ?? '1500',   10);
@@ -213,6 +222,9 @@ async function processPlayer(client, playerRow) {
   let bossChanges     = [];
   let clueChanges     = [];
   let newAchievements = [];
+  let level99s        = []; // skills that just hit 99
+  let totalLevelMilestone = null; // e.g. 2000
+  let bossKCMilestones    = []; // [{ boss, kc }]
   let firstRun        = false;
 
   if (storedSnap) {
@@ -221,10 +233,36 @@ async function processPlayer(client, playerRow) {
     clueChanges     = diffClues(storedSnap, freshSnap);
     newAchievements = diffAchievements(storedAchievements, freshAchievements);
 
+    // --- Level 99 milestone detection ---
+    for (const c of levelChanges) {
+      if (c.newLevel === 99) level99s.push(c.skill);
+    }
+
+    // --- Total level milestone detection ---
+    const oldTotal = storedSnap.skills?.overall?.level ?? 0;
+    const newTotal = freshSnap.skills?.overall?.level  ?? 0;
+    for (const milestone of TOTAL_LEVEL_MILESTONES) {
+      if (oldTotal < milestone && newTotal >= milestone) {
+        totalLevelMilestone = milestone;
+        break;
+      }
+    }
+
+    // --- Boss KC milestone detection ---
+    for (const c of bossChanges) {
+      for (const milestone of BOSS_KC_MILESTONES) {
+        if (c.oldKills < milestone && c.newKills >= milestone) {
+          bossKCMilestones.push({ boss: c.boss, kc: milestone });
+        }
+      }
+    }
+
     logger.info(
       `[Tracker] Diff for ${currentName}: ` +
-      `levels=${levelChanges.length}, bosses=${bossChanges.length}, ` +
-      `achievements=${newAchievements.length}, clues=${clueChanges.length}`,
+      `levels=${levelChanges.length} (99s: ${level99s.length}), ` +
+      `bosses=${bossChanges.length} (milestones: ${bossKCMilestones.length}), ` +
+      `achievements=${newAchievements.length}, clues=${clueChanges.length}` +
+      (totalLevelMilestone ? `, totalLevel=${totalLevelMilestone}` : ''),
     );
   } else {
     firstRun = true;
@@ -259,8 +297,22 @@ async function processPlayer(client, playerRow) {
     if (nameChanged) {
       await notifyNameChange(client, guild_id, username, currentName);
     }
-    if (opts.track_levels       && levelChanges.length)     await notifyLevels(client, guild_id, currentName, levelChanges);
-    if (opts.track_bosses       && bossChanges.length)      await notifyBosses(client, guild_id, currentName, bossChanges);
+    if (opts.track_levels && levelChanges.length) {
+      await notifyLevels(client, guild_id, currentName, levelChanges);
+      // Level 99 milestones – always sent regardless of track_levels toggle
+      for (const skill of level99s) {
+        await notifyLevel99(client, guild_id, currentName, skill);
+      }
+    }
+    if (totalLevelMilestone) {
+      await notifyTotalLevelMilestone(client, guild_id, currentName, totalLevelMilestone);
+    }
+    if (opts.track_bosses && bossChanges.length) {
+      await notifyBosses(client, guild_id, currentName, bossChanges);
+      for (const { boss, kc } of bossKCMilestones) {
+        await notifyBossKCMilestone(client, guild_id, currentName, boss, kc);
+      }
+    }
     if (opts.track_achievements && newAchievements.length)  await notifyAchievements(client, guild_id, currentName, newAchievements);
     if (opts.track_clues        && clueChanges.length)      await notifyClues(client, guild_id, currentName, clueChanges);
   }
@@ -278,6 +330,46 @@ async function processPlayer(client, playerRow) {
       clues:        clueChanges.length,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Weekly leaderboard auto-post
+// ---------------------------------------------------------------------------
+
+/**
+ * If today is Monday and the guild hasn't received a weekly post yet this week,
+ * fetch gains and post the leaderboard to the announcement channel.
+ */
+async function maybePostWeekly(guildId) {
+  const now = new Date();
+  if (now.getDay() !== 1) return; // 1 = Monday
+
+  const row = queries.getWeeklyPost.get(guildId);
+  if (row) {
+    const daysSince = (now - new Date(row.last_posted_at)) / (1000 * 60 * 60 * 24);
+    if (daysSince < 6) return; // already posted this week
+  }
+
+  const guildRow = queries.getGuild.get(guildId);
+  if (!guildRow?.channel_id) return;
+
+  const players = queries.getPlayersByGuild.all(guildId);
+  if (!players.length) return;
+
+  logger.info(`[Tracker] Auto weekly post for guild ${guildId}`);
+
+  try {
+    // Lazy-import to avoid circular dependency (weeklytop imports wom which is fine).
+    const { fetchWeeklyXp, postWeeklyLeaderboard } = await import('../commands/weeklytop.js');
+    const results = await fetchWeeklyXp(players);
+    if (!results.length) return;
+
+    const channel = await _client.channels.fetch(guildRow.channel_id);
+    await postWeeklyLeaderboard(channel, results);
+    queries.setWeeklyPost.run(guildId, now.toISOString());
+  } catch (err) {
+    logger.error(`[Tracker] Auto weekly post failed for guild ${guildId}: ${err.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +400,12 @@ async function runCycle() {
     for (const playerRow of uniquePlayers) {
       await processPlayer(_client, playerRow);
       if (REQUEST_DELAY_MS > 0) await sleep(REQUEST_DELAY_MS);
+    }
+
+    // Auto weekly leaderboard (runs on Mondays, once per week per guild).
+    const guilds = queries.getAllGuilds.all();
+    for (const { guild_id } of guilds) {
+      await maybePostWeekly(guild_id);
     }
   } finally {
     _cycleRunning = false;

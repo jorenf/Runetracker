@@ -1,74 +1,47 @@
 /**
  * src/utils/embeds.js
- * Compact ScapeBot-style Discord embeds.
- *
- * Design rules (matching the screenshot reference):
- *   – No embed title; only a coloured left border + description.
- *   – One natural-language line per change.
- *   – OSRS emoji at the end of each line.
- *   – Multiple changes of the same type are grouped in one embed.
+ * Compact ScapeBot-style Discord embeds with OSRS Wiki thumbnails.
  */
 
 import { EmbedBuilder } from 'discord.js';
+import {
+  getSkillIcon, getBossIcon, getClueIcon, getXpBarIcon,
+} from './wikicons.js';
 
 // ---------------------------------------------------------------------------
-// Colour palette (OSRS-themed)
+// Colours
 // ---------------------------------------------------------------------------
 export const COLORS = {
-  skill:       0xffb347, // warm orange  – level ups
-  boss:        0xc0392b, // deep red     – boss kills
-  achievement: 0xf1c40f, // gold         – achievements
-  clue:        0x27ae60, // deep green   – clue scrolls
-  nameChange:  0x3498db, // blue         – username change
-  info:        0x95a5a6, // grey         – status / info
+  skill:       0xffb347,
+  milestone:   0xf1c40f, // gold  – 99s, total level, KC milestones
+  boss:        0xc0392b,
+  achievement: 0xe67e22,
+  clue:        0x27ae60,
+  nameChange:  0x3498db,
+  weekly:      0x9b59b6, // purple – weekly leaderboard
+  info:        0x95a5a6,
 };
 
 // ---------------------------------------------------------------------------
-// OSRS skill → emoji map
+// Helpers
 // ---------------------------------------------------------------------------
-const SKILL_EMOJI = {
-  overall:      '🌟',
-  attack:       '⚔️',
-  defence:      '🛡️',
-  strength:     '💪',
-  hitpoints:    '❤️',
-  ranged:       '🏹',
-  prayer:       '✨',
-  magic:        '🔮',
-  cooking:      '🍳',
-  woodcutting:  '🪓',
-  fletching:    '🪃',
-  fishing:      '🎣',
-  firemaking:   '🔥',
-  crafting:     '🧶',
-  smithing:     '🔨',
-  mining:       '⛏️',
-  herblore:     '🌿',
-  agility:      '🏃',
-  thieving:     '🗝️',
-  slayer:       '💀',
-  farming:      '🌾',
-  runecrafting: '🔯',
-  hunter:       '🦊',
-  construction: '🏗️',
-  sailing:      '⛵',
-};
+export function formatNumber(n) {
+  if (n == null || n < 0) return '—';
+  return Number(n).toLocaleString('en-GB');
+}
 
-// ---------------------------------------------------------------------------
-// Clue scroll tier → emoji map
-// ---------------------------------------------------------------------------
-const CLUE_EMOJI = {
-  clue_scrolls_all:      '📜',
-  clue_scrolls_beginner: '📜',
-  clue_scrolls_easy:     '🟢',
-  clue_scrolls_medium:   '🟡',
-  clue_scrolls_hard:     '🔴',
-  clue_scrolls_elite:    '⭐',
-  clue_scrolls_master:   '👑',
-};
+/** Format large XP values as "1.2m", "450k", "12,345". */
+export function formatXp(xp) {
+  if (xp >= 1_000_000) return `${(xp / 1_000_000).toFixed(1)}m`;
+  if (xp >= 1_000)     return `${(xp / 1_000).toFixed(1)}k`;
+  return formatNumber(xp);
+}
 
-// Clue tier display names (strip the "clue_scrolls_" prefix and capitalise)
-const CLUE_TIER_NAME = {
+export function formatMetricName(key) {
+  return key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+const CLUE_TIER = {
   clue_scrolls_all:      'All',
   clue_scrolls_beginner: 'Beginner',
   clue_scrolls_easy:     'Easy',
@@ -78,151 +51,144 @@ const CLUE_TIER_NAME = {
   clue_scrolls_master:   'Master',
 };
 
-// ---------------------------------------------------------------------------
-// Notable boss → emoji map (unmapped bosses fall back to ⚔️)
-// ---------------------------------------------------------------------------
-const BOSS_EMOJI = {
-  zulrah:               '🐍',
-  vorkath:              '🐉',
-  cerberus:             '🐕',
-  barrows_chests:       '⚰️',
-  wintertodt:           '❄️',
-  theatre_of_blood:     '🩸',
-  theatre_of_blood_hard_mode: '🩸',
-  tombs_of_amascut:     '🏺',
-  tombs_of_amascut_expert: '🏺',
-  the_gauntlet:         '⚔️',
-  corrupted_gauntlet:   '💜',
-  nex:                  '👼',
-  phantom_muspah:       '👻',
-  the_leviathan:        '🌊',
-  the_whisperer:        '🌑',
-  duke_sucellus:        '🧊',
-  vardorvis:            '🌿',
-  scurrius:             '🐀',
-  lunar_chests:         '🌙',
-  sol_heredit:          '👑',
-};
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Format a number with thousands separators. */
-export function formatNumber(n) {
-  if (n == null || n < 0) return '—';
-  return Number(n).toLocaleString('en-GB');
-}
-
-/** snake_case → Title Case */
-export function formatMetricName(key) {
-  return key
-    .split('_')
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
-
-/** Return the emoji for a skill key, falling back to 📊. */
-function skillEmoji(key) {
-  return SKILL_EMOJI[key] ?? '📊';
-}
-
-/** Return the emoji for a boss key, falling back to ⚔️. */
-function bossEmoji(key) {
-  return BOSS_EMOJI[key] ?? '⚔️';
-}
-
-/**
- * Shared helper: build a plain-description embed with a coloured left border.
- * No title, no fields – just the lines of text.
- */
-function compactEmbed(color, lines) {
-  return new EmbedBuilder()
+/** Base embed – coloured left border + optional thumbnail, no title. */
+function base(color, lines, thumbnailUrl) {
+  const e = new EmbedBuilder()
     .setColor(color)
     .setDescription(lines.join('\n'));
+  if (thumbnailUrl) e.setThumbnail(thumbnailUrl);
+  return e;
 }
 
 // ---------------------------------------------------------------------------
-// Public embed builders
+// Regular notifications
 // ---------------------------------------------------------------------------
 
 /**
- * Level-up notifications.
- * One line per skill: "**Player** has gained **3** levels in **Magic** and is now level **70** 🔮"
- *
- * @param {string} displayName
- * @param {Array<{skill, oldLevel, newLevel, oldXp, newXp}>} changes
+ * Level-up embed.
+ * Uses the skill icon of the first (highest-gain) skill as thumbnail.
  */
 export function buildLevelEmbed(displayName, changes) {
-  const lines = changes.map(c => {
+  // Sort by levels gained desc so the biggest gain drives the thumbnail.
+  const sorted = [...changes].sort((a, b) => (b.newLevel - b.oldLevel) - (a.newLevel - a.oldLevel));
+  const lines = sorted.map(c => {
     const gained = c.newLevel - c.oldLevel;
     const plural = gained === 1 ? 'level' : 'levels';
-    const skill  = formatMetricName(c.skill);
-    const emoji  = skillEmoji(c.skill);
-    return `**${displayName}** has gained **${gained}** ${plural} in **${skill}** and is now level **${c.newLevel}** ${emoji}`;
+    return `**${displayName}** has gained **${gained}** ${plural} in **${formatMetricName(c.skill)}** and is now level **${c.newLevel}**`;
   });
-  return compactEmbed(COLORS.skill, lines);
+  return base(COLORS.skill, lines, getSkillIcon(sorted[0].skill));
 }
 
 /**
- * Boss kill notifications.
- * "**Player** has defeated **Zulrah** 5 more times for a total of **1,337** 🐍"
- *
- * @param {string} displayName
- * @param {Array<{boss, oldKills, newKills}>} changes
+ * Boss kill embed.
  */
 export function buildBossEmbed(displayName, changes) {
   const lines = changes.map(c => {
     const boss   = formatMetricName(c.boss);
     const gained = c.newKills - c.oldKills;
-    const total  = formatNumber(c.newKills);
-    const emoji  = bossEmoji(c.boss);
     const times  = gained === 1 ? 'again' : `**${gained}** more times`;
-    return `**${displayName}** has defeated **${boss}** ${times} for a total of **${total}** ${emoji}`;
+    return `**${displayName}** has defeated **${boss}** ${times} for a total of **${formatNumber(c.newKills)}**`;
   });
-  return compactEmbed(COLORS.boss, lines);
+  return base(COLORS.boss, lines, getBossIcon(changes[0].boss));
 }
 
 /**
- * Achievement notifications.
- * "**Player** has unlocked: **5,000 Zulrah kills** 🏆"
- *
- * @param {string} displayName
- * @param {Array<{name, metric, measure, threshold}>} achievements
+ * Achievement embed.
  */
 export function buildAchievementEmbed(displayName, achievements) {
-  const lines = achievements.map(a => {
-    return `**${displayName}** has unlocked: **${a.name}** 🏆`;
-  });
-  return compactEmbed(COLORS.achievement, lines);
+  const lines = achievements.map(a => `**${displayName}** has unlocked: **${a.name}**`);
+  return base(COLORS.achievement, lines);
 }
 
 /**
- * Clue scroll notifications.
- * "**Player** has completed **2** more **Easy** clues for a total of **79** 🟢"
- *
- * @param {string} displayName
- * @param {Array<{tier, oldScore, newScore}>} changes
+ * Clue scroll embed.
  */
 export function buildClueEmbed(displayName, changes) {
   const lines = changes.map(c => {
-    const tier   = CLUE_TIER_NAME[c.tier] ?? formatMetricName(c.tier);
+    const tier   = CLUE_TIER[c.tier] ?? formatMetricName(c.tier);
     const gained = c.newScore - c.oldScore;
-    const total  = formatNumber(c.newScore);
-    const emoji  = CLUE_EMOJI[c.tier] ?? '📜';
-    const times  = gained === 1 ? 'another' : `**${gained}** more`;
+    const qty    = gained === 1 ? 'another' : `**${gained}** more`;
     const noun   = gained === 1 ? 'clue' : 'clues';
-    return `**${displayName}** has completed ${times} **${tier}** ${noun} for a total of **${total}** ${emoji}`;
+    return `**${displayName}** has completed ${qty} **${tier}** ${noun} for a total of **${formatNumber(c.newScore)}**`;
   });
-  return compactEmbed(COLORS.clue, lines);
+  return base(COLORS.clue, lines, getClueIcon(changes[0].tier));
 }
 
 /**
- * Username change notification.
- * Compact single-line format with left border.
+ * Username change embed.
  */
 export function buildNameChangeEmbed(oldName, newName) {
-  return compactEmbed(COLORS.nameChange, [
+  return base(COLORS.nameChange, [
     `✏️ **${oldName}** has changed their name to **${newName}** – tracking updated automatically.`,
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Milestone embeds
+// ---------------------------------------------------------------------------
+
+/**
+ * Level 99 milestone – visually distinct from regular level-ups.
+ */
+export function buildLevel99Embed(displayName, skill) {
+  return new EmbedBuilder()
+    .setColor(COLORS.milestone)
+    .setTitle(`🎉 LEVEL 99 – ${formatMetricName(skill)}!`)
+    .setDescription(`**${displayName}** has achieved level **99** in **${formatMetricName(skill)}**! Congratulations! 🎊`)
+    .setThumbnail(getSkillIcon(skill));
+}
+
+/**
+ * Total level milestone (500 / 750 / 1000 / 1250 / 1500 / 1750 / 2000 / 2277).
+ */
+export function buildTotalLevelEmbed(displayName, totalLevel) {
+  const isMax = totalLevel >= 2277;
+  return new EmbedBuilder()
+    .setColor(COLORS.milestone)
+    .setTitle(isMax ? '👑 MAX TOTAL LEVEL!' : `⭐ Total Level ${totalLevel}!`)
+    .setDescription(
+      isMax
+        ? `**${displayName}** has achieved the maximum total level of **2277**! MAXED OUT! 🏆`
+        : `**${displayName}** has reached a total level of **${totalLevel}**! 🎯`,
+    )
+    .setThumbnail(getSkillIcon('overall'));
+}
+
+/**
+ * Boss KC milestone (100 / 250 / 500 / 1000 / 2000 / 5000 / 10000).
+ */
+export function buildBossKCMilestoneEmbed(displayName, boss, kc) {
+  return new EmbedBuilder()
+    .setColor(COLORS.milestone)
+    .setTitle(`💀 ${formatNumber(kc)} KC – ${formatMetricName(boss)}`)
+    .setDescription(`**${displayName}** has reached **${formatNumber(kc)}** kills at **${formatMetricName(boss)}**! 🏆`)
+    .setThumbnail(getBossIcon(boss));
+}
+
+// ---------------------------------------------------------------------------
+// Weekly XP leaderboard
+// ---------------------------------------------------------------------------
+
+/**
+ * Header embed for the weekly leaderboard post.
+ */
+export function buildWeeklyHeaderEmbed() {
+  return new EmbedBuilder()
+    .setColor(COLORS.weekly)
+    .setTitle('📊 Biggest XP earners over the last week:')
+    .setTimestamp();
+}
+
+/**
+ * One embed per player in the weekly leaderboard.
+ * Matches the ScapeBot screenshot layout.
+ *
+ * @param {{ username:string, xp:number }} player
+ * @param {number} rank  0-indexed
+ */
+export function buildWeeklyPlayerEmbed(player, rank) {
+  return new EmbedBuilder()
+    .setColor(COLORS.weekly)
+    .setDescription(`**${player.username}** with **${formatXp(player.xp)}** XP`)
+    .setThumbnail(getXpBarIcon(rank));
 }

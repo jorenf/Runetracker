@@ -13,6 +13,9 @@ import {
   buildAchievementEmbed,
   buildClueEmbed,
   buildNameChangeEmbed,
+  buildLevel99Embed,
+  buildTotalLevelEmbed,
+  buildBossKCMilestoneEmbed,
 } from '../utils/embeds.js';
 import logger from '../utils/logger.js';
 
@@ -90,4 +93,22 @@ export async function notifyNameChange(client, guildId, oldName, newName) {
   const embed = buildNameChangeEmbed(oldName, newName);
   await sendEmbeds(client, guildId, [embed]);
   logger.info(`[Notifier] Name change sent in guild ${guildId}: ${oldName} → ${newName}`);
+}
+
+export async function notifyLevel99(client, guildId, displayName, skill) {
+  const embed = buildLevel99Embed(displayName, skill);
+  await sendEmbeds(client, guildId, [embed]);
+  logger.info(`[Notifier] Level 99 sent for ${displayName} – ${skill} in guild ${guildId}`);
+}
+
+export async function notifyTotalLevelMilestone(client, guildId, displayName, totalLevel) {
+  const embed = buildTotalLevelEmbed(displayName, totalLevel);
+  await sendEmbeds(client, guildId, [embed]);
+  logger.info(`[Notifier] Total level ${totalLevel} sent for ${displayName} in guild ${guildId}`);
+}
+
+export async function notifyBossKCMilestone(client, guildId, displayName, boss, kc) {
+  const embed = buildBossKCMilestoneEmbed(displayName, boss, kc);
+  await sendEmbeds(client, guildId, [embed]);
+  logger.info(`[Notifier] Boss KC milestone ${kc} (${boss}) sent for ${displayName} in guild ${guildId}`);
 }
