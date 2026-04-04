@@ -136,7 +136,7 @@ export async function resolvePlayer(username) {
 }
 
 export async function searchGroups(name) {
-  return request(`/groups/search?name=${encodeURIComponent(name)}&limit=5`);
+  return request(`/groups?name=${encodeURIComponent(name)}&limit=5`);
 }
 
 export async function getGroup(groupId) {
