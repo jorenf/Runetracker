@@ -190,10 +190,11 @@ Once the bot is running and has joined your server:
 
 ## Database
 
-The SQLite database is created automatically at the path configured in `DB_PATH`
-(default `./data/muskebeers.db`).
+Data is stored as a JSON file (no native dependencies, works on all platforms).
+The file is created automatically at the path configured in `DB_PATH`
+(default `./data/muskebeers.json`).
 
-| Table | Purpose |
+| Collection | Purpose |
 |---|---|
 | `guilds` | Guild → announcement channel mapping |
 | `players` | Tracked players per guild |
@@ -211,5 +212,5 @@ The SQLite database is created automatically at the path configured in `DB_PATH`
 | `WOM_API_KEY` | ❌ | – | WiseOldMan API key (optional) |
 | `TRACKER_INTERVAL_MS` | ❌ | `300000` | Poll interval in milliseconds |
 | `WOM_REQUEST_DELAY_MS` | ❌ | `1500` | Delay between WOM requests (ms) |
-| `DB_PATH` | ❌ | `./data/muskebeers.db` | Path to SQLite database |
+| `DB_PATH` | ❌ | `./data/muskebeers.json` | Path to JSON data file |
 | `LOG_LEVEL` | ❌ | `info` | Minimum log level |
