@@ -18,7 +18,7 @@
  */
 
 import { queries, getEffectiveOptions } from '../db/index.js';
-import { updatePlayer, getPlayerAchievements } from './wom.js';
+import { updatePlayer, getPlayerAchievements, getGroupMembers } from './wom.js';
 import {
   notifyLevels,
   notifyBosses,
@@ -370,6 +370,44 @@ async function maybePostWeekly(guildId) {
 }
 
 // ---------------------------------------------------------------------------
+// Group member sync
+// ---------------------------------------------------------------------------
+
+async function maybeSyncGroup(guildId) {
+  const group = queries.getWomGroup.get(guildId);
+  if (!group) return;
+
+  // Only sync once per hour
+  if (group.synced_at && Date.now() - group.synced_at < 60 * 60 * 1000) return;
+
+  logger.info(`[Tracker] Syncing WOM group "${group.name}" for guild ${guildId}`);
+  try {
+    const members = await getGroupMembers(group.id);
+    let added = 0;
+    for (const member of members) {
+      const player = member.player;
+      if (!player?.id || !player?.username) continue;
+      const existing = queries.getPlayerByUsernameAndGuild.get(player.username, guildId);
+      if (existing) continue;
+      queries.upsertPlayer.run({ wom_id: player.id, username: player.username, guild_id: guildId });
+      if (!queries.getSnapshot.get(player.id) && player.latestSnapshot?.data) {
+        const snap = player.latestSnapshot.data;
+        queries.upsertSnapshot.run({
+          wom_id: player.id, username: player.username,
+          snapshot_json: JSON.stringify({ username: player.username, skills: snap.skills ?? {}, bosses: snap.bosses ?? {}, activities: snap.activities ?? {}, achievements: [] }),
+          updated_at: Date.now(),
+        });
+      }
+      added++;
+    }
+    queries.setWomGroup.run(guildId, { ...group, synced_at: Date.now() });
+    if (added > 0) logger.info(`[Tracker] Group sync: added ${added} new member(s) to guild ${guildId}`);
+  } catch (err) {
+    logger.warn(`[Tracker] Group sync failed for guild ${guildId}: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cycle runner
 // ---------------------------------------------------------------------------
 
@@ -402,6 +440,10 @@ async function runCycle() {
     const guilds = queries.getAllGuilds.all();
     for (const { guild_id } of guilds) {
       await maybePostWeekly(guild_id);
+    }
+
+    for (const { guild_id } of guilds) {
+      await maybeSyncGroup(guild_id);
     }
   } finally {
     _cycleRunning = false;

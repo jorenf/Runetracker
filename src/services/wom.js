@@ -134,3 +134,15 @@ export async function resolvePlayer(username) {
     return getPlayer(username);
   }
 }
+
+export async function searchGroups(name) {
+  return request(`/groups/search?name=${encodeURIComponent(name)}&limit=5`);
+}
+
+export async function getGroup(groupId) {
+  return request(`/groups/${groupId}`);
+}
+
+export async function getGroupMembers(groupId) {
+  return request(`/groups/${groupId}/members?limit=500`);
+}

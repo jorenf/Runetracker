@@ -39,6 +39,7 @@ const DEFAULT_GUILD = () => ({
   tracking_options: { track_levels: 1, track_bosses: 1, track_achievements: 1, track_clues: 1 },
   guild_admins:     [],   // [{ user_id }]
   weekly_post:      null, // { last_posted_at }
+  wom_group:        null, // { id, name, synced_at }
 });
 
 function guildPath(guildId)    { return join(GUILDS_DIR,    `${guildId}.json`); }
@@ -268,6 +269,22 @@ export const queries = {
   setWeeklyPost: {
     run(guild_id, last_posted_at) {
       mutateGuild(guild_id, g => { g.weekly_post = { last_posted_at }; });
+    },
+  },
+
+  setWomGroup: {
+    run(guild_id, group) {
+      mutateGuild(guild_id, g => { g.wom_group = group; });
+    },
+  },
+  getWomGroup: {
+    get(guild_id) {
+      return readJSON(guildPath(guild_id))?.wom_group ?? null;
+    },
+  },
+  clearWomGroup: {
+    run(guild_id) {
+      mutateGuild(guild_id, g => { g.wom_group = null; });
     },
   },
 };

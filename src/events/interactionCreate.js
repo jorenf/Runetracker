@@ -54,5 +54,27 @@ export default {
         await interaction.reply(errorPayload).catch(() => {});
       }
     }
+
+    return;
+  }
+
+  if (interaction.isMessageComponent()) {
+    // Dynamically import to avoid circular deps
+    const { handleWizardInteraction } = await import('../commands/setup.js');
+    const { handleSetgroupInteraction } = await import('../commands/setgroup.js');
+
+    try {
+      if (await handleWizardInteraction(interaction)) return;
+      if (await handleSetgroupInteraction(interaction)) return;
+    } catch (err) {
+      logger.error('Error handling component interaction:', err);
+      const payload = { content: 'An error occurred.', embeds: [], components: [] };
+      if (interaction.replied || interaction.deferred) {
+        await interaction.editReply(payload).catch(() => {});
+      } else {
+        await interaction.update(payload).catch(() => {});
+      }
+    }
+  }
   },
 };
