@@ -75,12 +75,16 @@ initDatabase();
 logger.info('Database initialised.');
 
 // ---------------------------------------------------------------------------
+// Start HTTP server immediately so Railway's healthcheck passes on boot.
+// The Discord client reference is passed in — notifications work once ready.
+// ---------------------------------------------------------------------------
+createServer(client);
+
+// ---------------------------------------------------------------------------
 // Start background tracker after the Discord client is ready.
-// The 'ready' event fires startTracker; we just wire it here for clarity.
 // ---------------------------------------------------------------------------
 client.once('ready', () => {
   startTracker(client);
-  createServer(client);
 });
 
 // ---------------------------------------------------------------------------
@@ -91,7 +95,7 @@ const shutdown = (signal) => {
   client.destroy();
   process.exit(0);
 };
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // ---------------------------------------------------------------------------
