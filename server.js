@@ -4,6 +4,8 @@
  *
  * Requires:  npm install express
  */
+import { startHttpServer } from './server.js';
+startHttpServer();
 
 import express from 'express';
 import webhookRouter from './routes/webhook.js';
