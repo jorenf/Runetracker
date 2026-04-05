@@ -34,12 +34,16 @@ for (const dir of [GUILDS_DIR, SNAPSHOTS_DIR]) {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_GUILD = () => ({
-  channel_id:       null,
-  players:          [],   // [{ wom_id, username }]
-  tracking_options: { track_levels: 1, track_bosses: 1, track_achievements: 1, track_clues: 1 },
-  guild_admins:     [],   // [{ user_id }]
-  weekly_post:      null, // { last_posted_at }
-  wom_group:        null, // { id, name, synced_at }
+  channel_id:        null,
+  players:           [],   // [{ wom_id, username }]
+  tracking_options:  { track_levels: 1, track_bosses: 1, track_achievements: 1, track_clues: 1 },
+  guild_admins:      [],   // [{ user_id }]
+  weekly_post:       null, // { last_posted_at }
+  wom_group:         null, // { id, name, synced_at }
+  loot_token:        null, // Bearer token for HTTP webhook auth
+  loot_channel_id:   null, // channel to post loot embeds
+  loot_threshold_gp: 10_000_000, // min drop value to trigger a notification
+  loot_entries:      [],   // [{ player, item_name, item_id, qty, value, source, kc, ts }]
 });
 
 function guildPath(guildId)    { return join(GUILDS_DIR,    `${guildId}.json`); }
@@ -285,6 +289,71 @@ export const queries = {
   clearWomGroup: {
     run(guild_id) {
       mutateGuild(guild_id, g => { g.wom_group = null; });
+    },
+  },
+
+  // ── Loot tracking ─────────────────────────────────────────────────────────
+
+  setLootToken: {
+    run(guild_id, token) {
+      mutateGuild(guild_id, g => { g.loot_token = token; });
+    },
+  },
+
+  setLootChannel: {
+    run(guild_id, channel_id) {
+      mutateGuild(guild_id, g => { g.loot_channel_id = channel_id; });
+    },
+  },
+
+  setLootThreshold: {
+    run(guild_id, gp) {
+      mutateGuild(guild_id, g => { g.loot_threshold_gp = gp; });
+    },
+  },
+
+  /** Find the guild that owns a given loot token. Returns { guild_id, channel_id, loot_threshold_gp } or null. */
+  getGuildByLootToken: {
+    get(token) {
+      for (const id of allGuildIds()) {
+        const g = readJSON(guildPath(id));
+        if (g?.loot_token === token) {
+          return { guild_id: id, channel_id: g.channel_id, loot_channel_id: g.loot_channel_id, loot_threshold_gp: g.loot_threshold_gp ?? 10_000_000 };
+        }
+      }
+      return null;
+    },
+  },
+
+  /** Add one drop entry. Caps array at 1000 entries (oldest removed first). */
+  addLootEntry: {
+    run(guild_id, entry) {
+      mutateGuild(guild_id, g => {
+        g.loot_entries.push(entry);
+        if (g.loot_entries.length > 1000) g.loot_entries = g.loot_entries.slice(-1000);
+      });
+    },
+  },
+
+  /** Return all loot entries for a guild, optionally filtered to after `sinceTs`. */
+  getLootEntries: {
+    all(guild_id, sinceTs = 0) {
+      const g = readJSON(guildPath(guild_id));
+      return (g?.loot_entries ?? []).filter(e => e.ts >= sinceTs);
+    },
+  },
+
+  getLootSettings: {
+    get(guild_id) {
+      const g = readJSON(guildPath(guild_id));
+      if (!g) return null;
+      return {
+        guild_id,
+        loot_token:        g.loot_token ?? null,
+        loot_channel_id:   g.loot_channel_id ?? null,
+        loot_threshold_gp: g.loot_threshold_gp ?? 10_000_000,
+        entry_count:       (g.loot_entries ?? []).length,
+      };
     },
   },
 };

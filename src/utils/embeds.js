@@ -19,6 +19,7 @@ export const COLORS = {
   clue:        0x27ae60,
   nameChange:  0x3498db,
   weekly:      0x9b59b6, // purple – weekly leaderboard
+  loot:        0xffd700, // gold   – big drops
   info:        0x95a5a6,
 };
 
@@ -207,4 +208,61 @@ export function buildWeeklyPlayerEmbed(player, rank) {
     .setColor(COLORS.weekly)
     .setDescription(`**${player.username}** with **${formatXp(player.xp)}** XP`)
     .setThumbnail(getXpBarIcon(rank));
+}
+
+// ---------------------------------------------------------------------------
+// Loot embeds
+// ---------------------------------------------------------------------------
+
+/** Format GP value compactly: 1234567 → "1.2M" */
+export function formatGP(n) {
+  if (!n || n < 0) return '0 gp';
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B gp`;
+  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M gp`;
+  if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K gp`;
+  return `${n.toLocaleString('en-GB')} gp`;
+}
+
+/** Notification embed for a drop that crossed the GP threshold. */
+export function buildBigDropEmbed(displayName, entry) {
+  const isPet = entry.source?.toLowerCase().includes('pet') || entry.item_name?.toLowerCase().includes('pet');
+  const color = isPet ? 0xff69b4 : COLORS.loot;
+  const icon  = `https://oldschool.runescape.wiki/images/${encodeURIComponent(entry.item_name.replace(/ /g, '_'))}.png`;
+
+  const lines = [
+    `**${displayName}** received a drop:`,
+    `**${entry.item_name}**${entry.qty > 1 ? ` x${entry.qty}` : ''} — **${formatGP(entry.value)}**`,
+  ];
+  if (entry.source && entry.source !== 'Unknown') lines.push(`*${entry.source}${entry.kc ? ` (KC: ${entry.kc})` : ''}*`);
+
+  return new EmbedBuilder()
+    .setColor(color)
+    .setDescription(lines.join('\n'))
+    .setThumbnail(icon)
+    .setTimestamp(entry.ts ? new Date(entry.ts) : new Date());
+}
+
+/** One row in the loot leaderboard. */
+export function buildLootLeaderboardEmbed(title, rows) {
+  const medals = ['🥇', '🥈', '🥉'];
+  const lines = rows.map((r, i) =>
+    `${medals[i] ?? `**${i + 1}.**`} **${r.player}** — ${formatGP(r.total)}`,
+  );
+
+  return new EmbedBuilder()
+    .setColor(COLORS.loot)
+    .setTitle(title)
+    .setDescription(lines.length ? lines.join('\n') : '*No drops recorded yet.*');
+}
+
+/** Top single drops (hall of fame). */
+export function buildTopDropsEmbed(rows) {
+  const lines = rows.map((e, i) =>
+    `**${i + 1}.** **${e.player}** — ${e.item_name}${e.qty > 1 ? ` x${e.qty}` : ''} (${formatGP(e.value)})`,
+  );
+
+  return new EmbedBuilder()
+    .setColor(COLORS.loot)
+    .setTitle('💰 Top Drops — Hall of Fame')
+    .setDescription(lines.length ? lines.join('\n') : '*No drops recorded yet.*');
 }
