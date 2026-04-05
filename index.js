@@ -75,8 +75,8 @@ initDatabase();
 logger.info('Database initialised.');
 
 // ---------------------------------------------------------------------------
-// Start HTTP server immediately — before Discord connects so Railway's
-// healthcheck on /health passes during startup.
+// Start HTTP server immediately so Railway's healthcheck passes on boot.
+// The Discord client reference is passed in — notifications work once ready.
 // ---------------------------------------------------------------------------
 createServer(client);
 
@@ -95,7 +95,7 @@ const shutdown = (signal) => {
   client.destroy();
   process.exit(0);
 };
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // ---------------------------------------------------------------------------
