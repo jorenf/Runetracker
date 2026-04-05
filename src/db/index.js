@@ -329,6 +329,7 @@ export const queries = {
   addLootEntry: {
     run(guild_id, entry) {
       mutateGuild(guild_id, g => {
+        if (!Array.isArray(g.loot_entries)) g.loot_entries = [];
         g.loot_entries.push(entry);
         if (g.loot_entries.length > 1000) g.loot_entries = g.loot_entries.slice(-1000);
       });
