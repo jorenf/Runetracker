@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase } from './src/db/index.js';
 import { startTracker } from './src/services/tracker.js';
+import { createServer } from './src/http/server.js';
 import logger from './src/utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +80,7 @@ logger.info('Database initialised.');
 // ---------------------------------------------------------------------------
 client.once('ready', () => {
   startTracker(client);
+  createServer(client);
 });
 
 // ---------------------------------------------------------------------------
