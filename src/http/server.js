@@ -83,7 +83,7 @@ export function createServer(client) {
   // ── Start ─────────────────────────────────────────────────────────────────
 
   const port = parseInt(process.env.PORT ?? '3000', 10);
-  app.listen(port, () => logger.info(`[HTTP] Listening on port ${port}`));
+  app.listen(port, '0.0.0.0', () => logger.info(`[HTTP] Listening on 0.0.0.0:${port}`));
 
   return app;
 }
