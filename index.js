@@ -75,12 +75,16 @@ initDatabase();
 logger.info('Database initialised.');
 
 // ---------------------------------------------------------------------------
+// Start HTTP server immediately — before Discord connects so Railway's
+// healthcheck on /health passes during startup.
+// ---------------------------------------------------------------------------
+createServer(client);
+
+// ---------------------------------------------------------------------------
 // Start background tracker after the Discord client is ready.
-// The 'ready' event fires startTracker; we just wire it here for clarity.
 // ---------------------------------------------------------------------------
 client.once('ready', () => {
   startTracker(client);
-  createServer(client);
 });
 
 // ---------------------------------------------------------------------------
