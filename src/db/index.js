@@ -35,15 +35,24 @@ for (const dir of [GUILDS_DIR, SNAPSHOTS_DIR]) {
 
 const DEFAULT_GUILD = () => ({
   channel_id:        null,
-  players:           [],   // [{ wom_id, username }]
-  tracking_options:  { track_levels: 1, track_bosses: 1, track_achievements: 1, track_clues: 1 },
-  guild_admins:      [],   // [{ user_id }]
-  weekly_post:       null, // { last_posted_at }
-  wom_group:         null, // { id, name, synced_at }
-  loot_token:        null, // Bearer token for HTTP webhook auth
-  loot_channel_id:   null, // channel to post loot embeds
-  loot_threshold_gp: 10_000_000, // min drop value to trigger a notification
-  loot_entries:      [],   // [{ player, item_name, item_id, qty, value, source, kc, ts }]
+  players:           [],
+  tracking_options:  {
+    track_levels:       1,
+    track_bosses:       1,
+    track_achievements: 1,
+    track_clues:        1,
+    min_level_notify:   30,  // ignore level-ups below this level
+    min_boss_kc_notify: 5,   // ignore boss KC below this threshold
+    cooldown_hours:     0,   // min hours between any notifications per player (0 = off)
+  },
+  guild_admins:      [],
+  weekly_post:       null,
+  wom_group:         null,
+  loot_token:        null,
+  loot_channel_id:   null,
+  loot_threshold_gp: 10_000_000,
+  loot_entries:      [],
+  player_cooldowns:  {},     // { [wom_id]: last_notified_at (ms) }
 });
 
 function guildPath(guildId)    { return join(GUILDS_DIR,    `${guildId}.json`); }
@@ -197,9 +206,37 @@ export const queries = {
   // ── Tracking options ──────────────────────────────────────────────────────
 
   upsertTrackingOptions: {
-    run({ guild_id, track_levels, track_bosses, track_achievements, track_clues }) {
+    run(opts) {
+      const { guild_id, ...rest } = opts;
       mutateGuild(guild_id, g => {
-        g.tracking_options = { track_levels, track_bosses, track_achievements, track_clues };
+        g.tracking_options = { ...(g.tracking_options ?? {}), ...rest };
+      });
+    },
+  },
+
+  setSpamFilter: {
+    run(guild_id, { min_level_notify, min_boss_kc_notify, cooldown_hours }) {
+      mutateGuild(guild_id, g => {
+        if (!g.tracking_options) g.tracking_options = {};
+        if (min_level_notify   !== undefined) g.tracking_options.min_level_notify   = min_level_notify;
+        if (min_boss_kc_notify !== undefined) g.tracking_options.min_boss_kc_notify = min_boss_kc_notify;
+        if (cooldown_hours     !== undefined) g.tracking_options.cooldown_hours     = cooldown_hours;
+      });
+    },
+  },
+
+  getPlayerCooldown: {
+    get(guild_id, wom_id) {
+      const g = readJSON(guildPath(guild_id));
+      return g?.player_cooldowns?.[wom_id] ?? 0;
+    },
+  },
+
+  setPlayerCooldown: {
+    run(guild_id, wom_id, ts) {
+      mutateGuild(guild_id, g => {
+        if (!g.player_cooldowns) g.player_cooldowns = {};
+        g.player_cooldowns[wom_id] = ts;
       });
     },
   },
@@ -364,12 +401,17 @@ export const queries = {
 // ---------------------------------------------------------------------------
 
 export function getEffectiveOptions(guildId) {
-  return queries.getTrackingOptions.get(guildId) ?? {
+  const stored = queries.getTrackingOptions.get(guildId);
+  return {
     guild_id:           guildId,
     track_levels:       1,
     track_bosses:       1,
     track_achievements: 1,
     track_clues:        1,
+    min_level_notify:   30,
+    min_boss_kc_notify: 5,
+    cooldown_hours:     0,
+    ...stored,
   };
 }
 
