@@ -104,23 +104,32 @@ export function createServer(client) {
   // ── Admin endpoints ───────────────────────────────────────────────────────
 
   /** GET /admin/guilds?key=SECRET — overview of all guilds */
-  app.get('/admin/guilds', (req, res) => {
+  app.get('/admin/guilds', async (req, res) => {
     if (!adminAuth(req, res)) return;
     try {
       const files = readdirSync(GUILDS_DIR).filter(f => f.endsWith('.json'));
-      const guilds = files.map(f => {
+      const guilds = await Promise.all(files.map(async f => {
         const raw  = JSON.parse(readFileSync(join(GUILDS_DIR, f), 'utf8'));
+        const guildId = raw.guild_id ?? f.replace('.json', '');
+
+        let discord = null;
+        try {
+          const g = await client.guilds.fetch(guildId);
+          discord = { name: g.name, member_count: g.memberCount, owner_id: g.ownerId };
+        } catch { /* bot may have left */ }
+
         return {
-          guild_id:      raw.guild_id ?? f.replace('.json', ''),
-          channel_id:    raw.channel_id,
-          players:       (raw.players ?? []).map(p => p.username),
-          player_count:  (raw.players ?? []).length,
-          wom_group:     raw.wom_group?.name ?? null,
-          loot_entries:  (raw.loot_entries ?? []).length,
-          tracking:      raw.tracking_options,
-          admins:        (raw.guild_admins ?? []).map(a => a.user_id),
+          guild_id:     guildId,
+          discord,
+          channel_id:   raw.channel_id,
+          players:      (raw.players ?? []).map(p => p.username),
+          player_count: (raw.players ?? []).length,
+          wom_group:    raw.wom_group?.name ?? null,
+          loot_entries: (raw.loot_entries ?? []).length,
+          tracking:     raw.tracking_options,
+          admins:       (raw.guild_admins ?? []).map(a => a.user_id),
         };
-      });
+      }));
       res.json({ guild_count: guilds.length, guilds });
     } catch (err) {
       res.status(500).json({ error: err.message });
