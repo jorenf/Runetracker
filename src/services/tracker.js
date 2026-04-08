@@ -291,12 +291,40 @@ async function processPlayer(client, playerRow) {
   for (const { guild_id } of guildRows) {
     const opts = getEffectiveOptions(guild_id);
 
+    // ── Cooldown check ───────────────────────────────────────────────────────
+    // Skip non-milestone notifications if the player was notified too recently.
+    const cooldownMs   = (opts.cooldown_hours ?? 0) * 60 * 60 * 1000;
+    const lastNotified = cooldownMs > 0 ? queries.getPlayerCooldown.get(guild_id, wom_id) : 0;
+    const onCooldown   = cooldownMs > 0 && (Date.now() - lastNotified) < cooldownMs;
+
+    // ── Per-guild filtered changes ────────────────────────────────────────────
+    const minLevel  = opts.min_level_notify   ?? 30;
+    const minBossKC = opts.min_boss_kc_notify ?? 5;
+
+    // Always post level 99s and milestones regardless of thresholds/cooldown.
+    // Filter regular level changes by min_level_notify.
+    const filteredLevels = levelChanges.filter(c => c.newLevel >= minLevel);
+    const filteredBosses = bossChanges.filter(c => c.newKills >= minBossKC);
+
     if (nameChanged) {
       await notifyNameChange(client, guild_id, username, currentName);
     }
-    if (opts.track_levels && levelChanges.length) {
-      await notifyLevels(client, guild_id, currentName, levelChanges);
-      // Level 99 milestones – always sent regardless of track_levels toggle
+
+    if (!onCooldown) {
+      if (opts.track_levels && filteredLevels.length) {
+        await notifyLevels(client, guild_id, currentName, filteredLevels);
+      }
+      if (opts.track_bosses && filteredBosses.length) {
+        await notifyBosses(client, guild_id, currentName, filteredBosses);
+      }
+      if (opts.track_achievements && newAchievements.length) await notifyAchievements(client, guild_id, currentName, newAchievements);
+      if (opts.track_clues        && clueChanges.length)     await notifyClues(client, guild_id, currentName, clueChanges);
+    } else {
+      logger.debug(`[Tracker] ${currentName} on cooldown for guild ${guild_id} — skipping regular notifications`);
+    }
+
+    // Milestones always fire, even on cooldown.
+    if (opts.track_levels) {
       for (const skill of level99s) {
         await notifyLevel99(client, guild_id, currentName, skill);
       }
@@ -304,14 +332,19 @@ async function processPlayer(client, playerRow) {
     if (totalLevelMilestone) {
       await notifyTotalLevelMilestone(client, guild_id, currentName, totalLevelMilestone);
     }
-    if (opts.track_bosses && bossChanges.length) {
-      await notifyBosses(client, guild_id, currentName, bossChanges);
+    if (opts.track_bosses) {
       for (const { boss, kc } of bossKCMilestones) {
         await notifyBossKCMilestone(client, guild_id, currentName, boss, kc);
       }
     }
-    if (opts.track_achievements && newAchievements.length)  await notifyAchievements(client, guild_id, currentName, newAchievements);
-    if (opts.track_clues        && clueChanges.length)      await notifyClues(client, guild_id, currentName, clueChanges);
+
+    // Update cooldown timestamp if we sent any regular notifications.
+    const sentSomething = !onCooldown && (
+      filteredLevels.length || filteredBosses.length || newAchievements.length || clueChanges.length
+    );
+    if (cooldownMs > 0 && sentSomething) {
+      queries.setPlayerCooldown.run(guild_id, wom_id, Date.now());
+    }
   }
 
   return {
