@@ -106,6 +106,12 @@ export async function getPlayerGains(username, period = 'day') {
   return request(`/players/${encodeURIComponent(username)}/gained?period=${period}`);
 }
 
+export async function getPlayerGainsSince(username, startDate) {
+  const start = encodeURIComponent(startDate.toISOString());
+  const end   = encodeURIComponent(new Date().toISOString());
+  return request(`/players/${encodeURIComponent(username)}/gained?startDate=${start}&endDate=${end}`);
+}
+
 /**
  * Search for a player by username prefix (useful for fuzzy matching).
  *

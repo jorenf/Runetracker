@@ -10,7 +10,7 @@
 
 import { SlashCommandBuilder } from 'discord.js';
 import { queries } from '../db/index.js';
-import { getPlayerGains } from '../services/wom.js';
+import { getPlayerGainsSince } from '../services/wom.js';
 import { buildWeeklyHeaderEmbed, buildWeeklyPlayerEmbed } from '../utils/embeds.js';
 import { isAdmin, replyNoPermission } from '../utils/admin.js';
 import logger from '../utils/logger.js';
@@ -66,15 +66,29 @@ export default {
  * @param {Array<{username:string}>} players
  * @returns {Promise<Array<{username:string, xp:number}>>}
  */
+/** Returns the most recent Monday at 00:00 UTC. */
+function getLastMonday() {
+  const now = new Date();
+  const day = now.getUTCDay();              // 0 = Sun … 6 = Sat
+  const daysBack = day === 0 ? 6 : day - 1; // days since last Monday
+  const monday = new Date(now);
+  monday.setUTCDate(now.getUTCDate() - daysBack);
+  monday.setUTCHours(0, 0, 0, 0);
+  return monday;
+}
+
 export async function fetchWeeklyXp(players) {
+  const since   = getLastMonday();
   const results = [];
+
+  logger.info(`[WeeklyTop] Fetching XP gains since ${since.toISOString()} (last Monday 00:00 UTC)`);
 
   for (const player of players) {
     try {
-      const gains = await getPlayerGains(player.username, 'week');
+      const gains = await getPlayerGainsSince(player.username, since);
       const xp    = gains?.data?.skills?.overall?.experience?.gained ?? 0;
       if (xp > 0) results.push({ username: player.username, xp });
-      logger.debug(`[WeeklyTop] ${player.username}: ${xp} XP gained this week`);
+      logger.debug(`[WeeklyTop] ${player.username}: ${xp} XP gained since Monday`);
     } catch (err) {
       logger.warn(`[WeeklyTop] Could not fetch gains for ${player.username}: ${err.message}`);
     }
