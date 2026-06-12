@@ -147,6 +147,7 @@ export async function handleSetgroupInteraction(interaction) {
             bosses: snap.bosses ?? {},
             activities: snap.activities ?? {},
             achievements: [],
+            achievements_loaded: false,
           }),
           updated_at: Date.now(),
         });

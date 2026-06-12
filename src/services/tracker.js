@@ -29,6 +29,7 @@ import {
   notifyTotalLevelMilestone,
   notifyBossKCMilestone,
 } from './notifier.js';
+import { reconcileAchievements } from './achievements.js';
 import logger from '../utils/logger.js';
 
 /** Total level values that trigger a special milestone notification. */
@@ -141,11 +142,6 @@ function diffClues(oldSnap, newSnap) {
   return changes;
 }
 
-function diffAchievements(oldList, newList) {
-  const oldNames = new Set((oldList ?? []).map(a => a.name));
-  return newList.filter(a => !oldNames.has(a.name));
-}
-
 // ---------------------------------------------------------------------------
 // Core: process a single player
 // Returns a result object so manual triggers can report back to the user.
@@ -199,20 +195,20 @@ async function processPlayer(client, playerRow) {
   }
 
   // 3. Load stored baseline
-  const storedRow          = queries.getSnapshot.get(wom_id);
-  const storedSnap         = storedRow ? JSON.parse(storedRow.snapshot_json) : null;
-  const storedAchievements = storedRow
-    ? (JSON.parse(storedRow.snapshot_json).achievements ?? [])
-    : [];
+  const storedRow = queries.getSnapshot.get(wom_id);
+  const storedSnap = storedRow ? JSON.parse(storedRow.snapshot_json) : null;
 
   // 4. Fetch achievements
   let freshAchievements = [];
+  let achievementsFetched = false;
   try {
     freshAchievements = await getPlayerAchievements(currentName);
+    achievementsFetched = true;
     logger.debug(`[Tracker] Fetched ${freshAchievements.length} achievements for ${currentName}`);
   } catch (err) {
     logger.warn(`[Tracker] Could not fetch achievements for ${currentName}: ${err.message}`);
   }
+  const achievementState = reconcileAchievements(storedSnap, freshAchievements, achievementsFetched);
 
   // 5. Compute diffs
   let levelChanges    = [];
@@ -228,7 +224,7 @@ async function processPlayer(client, playerRow) {
     levelChanges    = diffSkills(storedSnap, freshSnap);
     bossChanges     = diffBosses(storedSnap, freshSnap);
     clueChanges     = diffClues(storedSnap, freshSnap);
-    newAchievements = diffAchievements(storedAchievements, freshAchievements);
+    newAchievements = achievementState.newAchievements;
 
     // --- Level 99 milestone detection ---
     for (const c of levelChanges) {
@@ -270,7 +266,11 @@ async function processPlayer(client, playerRow) {
   queries.upsertSnapshot.run({
     wom_id,
     username:      currentName,
-    snapshot_json: JSON.stringify({ ...freshSnap, achievements: freshAchievements }),
+    snapshot_json: JSON.stringify({
+      ...freshSnap,
+      achievements: achievementState.achievementsForSnapshot,
+      achievements_loaded: achievementState.achievementsLoaded,
+    }),
     updated_at:    Date.now(),
   });
   logger.debug(`[Tracker] Snapshot saved for ${currentName}`);
@@ -427,7 +427,14 @@ async function maybeSyncGroup(guildId) {
         const snap = player.latestSnapshot.data;
         queries.upsertSnapshot.run({
           wom_id: player.id, username: player.username,
-          snapshot_json: JSON.stringify({ username: player.username, skills: snap.skills ?? {}, bosses: snap.bosses ?? {}, activities: snap.activities ?? {}, achievements: [] }),
+          snapshot_json: JSON.stringify({
+            username: player.username,
+            skills: snap.skills ?? {},
+            bosses: snap.bosses ?? {},
+            activities: snap.activities ?? {},
+            achievements: [],
+            achievements_loaded: false,
+          }),
           updated_at: Date.now(),
         });
       }

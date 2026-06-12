@@ -87,8 +87,10 @@ export default {
       const snap = player.latestSnapshot?.data;
       if (snap) {
         let achievements = [];
+        let achievementsLoaded = false;
         try {
           achievements = await getPlayerAchievements(player.username);
+          achievementsLoaded = true;
         } catch {
           // Non-fatal – achievements just won't diff on the very first run.
         }
@@ -102,6 +104,7 @@ export default {
             bosses:       snap.bosses     ?? {},
             activities:   snap.activities ?? {},
             achievements,
+            achievements_loaded: achievementsLoaded,
           }),
           updated_at: Date.now(),
         });

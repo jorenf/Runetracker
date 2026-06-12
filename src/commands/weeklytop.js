@@ -5,15 +5,17 @@
  * Posts the biggest XP earners over the last week for all tracked players.
  * Also called automatically every Monday by the tracker service.
  *
- * Admin only – uses the configured announcement channel.
+ * Admin only; uses the configured announcement channel.
  */
 
 import { SlashCommandBuilder } from 'discord.js';
 import { queries } from '../db/index.js';
-import { getPlayerGainsSince } from '../services/wom.js';
+import { fetchWeeklyXp } from '../services/weekly.js';
 import { buildWeeklyHeaderEmbed, buildWeeklyPlayerEmbed } from '../utils/embeds.js';
 import { isAdmin, replyNoPermission } from '../utils/admin.js';
 import logger from '../utils/logger.js';
+
+export { fetchWeeklyXp } from '../services/weekly.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -47,7 +49,7 @@ export default {
     try {
       const channel = await interaction.client.channels.fetch(guildRow.channel_id);
       await postWeeklyLeaderboard(channel, results);
-      return interaction.editReply(`Weekly leaderboard posted in <#${guildRow.channel_id}>! ✅`);
+      return interaction.editReply(`Weekly leaderboard posted in <#${guildRow.channel_id}>.`);
     } catch (err) {
       logger.error('[WeeklyTop] Failed to post leaderboard:', err);
       return interaction.editReply(`Failed to post: ${err.message}`);
@@ -55,60 +57,18 @@ export default {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Shared helpers (also exported for use by the auto-post in tracker.js)
-// ---------------------------------------------------------------------------
-
-/**
- * Fetch weekly XP gains for a list of player rows.
- * Returns sorted array of { username, xp }, filtering out players with 0 XP.
- *
- * @param {Array<{username:string}>} players
- * @returns {Promise<Array<{username:string, xp:number}>>}
- */
-/** Returns the most recent Monday at 00:00 UTC. */
-function getLastMonday() {
-  const now = new Date();
-  const day = now.getUTCDay();              // 0 = Sun … 6 = Sat
-  const daysBack = day === 0 ? 6 : day - 1; // days since last Monday
-  const monday = new Date(now);
-  monday.setUTCDate(now.getUTCDate() - daysBack);
-  monday.setUTCHours(0, 0, 0, 0);
-  return monday;
-}
-
-export async function fetchWeeklyXp(players) {
-  const since   = getLastMonday();
-  const results = [];
-
-  logger.info(`[WeeklyTop] Fetching XP gains since ${since.toISOString()} (last Monday 00:00 UTC)`);
-
-  for (const player of players) {
-    try {
-      const gains = await getPlayerGainsSince(player.username, since);
-      const xp    = gains?.data?.skills?.overall?.experience?.gained ?? 0;
-      if (xp > 0) results.push({ username: player.username, xp });
-      logger.debug(`[WeeklyTop] ${player.username}: ${xp} XP gained since Monday`);
-    } catch (err) {
-      logger.warn(`[WeeklyTop] Could not fetch gains for ${player.username}: ${err.message}`);
-    }
-  }
-
-  return results.sort((a, b) => b.xp - a.xp);
-}
-
 /**
  * Post the weekly leaderboard embeds to a channel.
  * Header embed + one compact embed per player, exactly like the screenshot.
  *
  * @param {import('discord.js').TextChannel} channel
- * @param {Array<{username:string, xp:number}>} results  sorted best-first
+ * @param {Array<{username:string, xp:number}>} results sorted best-first
  */
 export async function postWeeklyLeaderboard(channel, results) {
-  const header      = buildWeeklyHeaderEmbed();
+  const header = buildWeeklyHeaderEmbed();
   const playerEmbeds = results.map((p, i) => buildWeeklyPlayerEmbed(p, i));
 
-  // Send header + first batch of players in one message (max 10 embeds total).
+  // Discord allows max 10 embeds per message.
   const allEmbeds = [header, ...playerEmbeds];
   for (let i = 0; i < allEmbeds.length; i += 10) {
     await channel.send({ embeds: allEmbeds.slice(i, i + 10) });
