@@ -20,12 +20,15 @@ the `bot` and `applications.commands` scopes.
 | Variable | Example | Description |
 | --- | --- | --- |
 | `DATA_DIR` | `/data` | Persistent storage path for guild configs and snapshots. |
-| `PORT` | `3000` | HTTP server port for `/health`, `/webhook/loot`, and admin endpoints. |
+| `PORT` | `8080` | HTTP server port for `/health`, `/webhook/loot`, admin endpoints, and `/api/site*`. |
 | `WOM_REQUESTS_PER_MINUTE` | `40` | Wise Old Man request throttle. |
 | `TRACKER_INTERVAL_MS` | `300000` | Tracker polling interval in milliseconds. |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, or `debug`. |
 | `WOM_API_KEY` | empty | Optional Wise Old Man API key. |
 | `ADMIN_SECRET` | long random string | Optional secret for `/admin/*` endpoints. |
+| `SITE_DIR` | `/site` | Optional external folder served as the public website. |
+| `SITE_API_KEY` | long random string | Optional secret for `/api/site*` when the stats API should not be public. |
+| `SITE_CORS_ORIGIN` | `https://example.com` | Optional CORS origin when the site is hosted separately. |
 
 Keep all secrets out of GitHub issues, screenshots, logs, and commits.
 
@@ -40,6 +43,42 @@ Keep all secrets out of GitHub issues, screenshots, logs, and commits.
 7. Deploy.
 
 Railway should use `npm start` automatically from `package.json`.
+
+### Website on Shared Hosting
+
+When the bot runs on Railway and the website runs on shared hosting, keep
+`SITE_DIR` empty on Railway. The website connects to Railway through
+`https://api.runetracker.icu` and the sanitized `/api/site*` endpoints.
+
+Railway environment variables:
+
+```env
+PORT=8080
+SITE_CORS_ORIGIN=https://runetracker.icu,https://www.runetracker.icu
+SITE_API_KEY=
+```
+
+After Railway deploys, test:
+
+```text
+https://api.runetracker.icu/health
+https://api.runetracker.icu/api/site
+```
+
+Upload the external `site/RuneTracker.html` file to the shared host and point it
+at Railway:
+
+```text
+https://runetracker.icu/RuneTracker.html?api=https://api.runetracker.icu
+```
+
+The current site template already defaults to `https://api.runetracker.icu`, so
+renaming it to `index.html` on shared hosting is enough for the normal
+`https://runetracker.icu` URL.
+
+If `SITE_API_KEY` is set, the site can pass it with `&key=...` or with
+`window.RUNETRACKER_SITE_KEY` in the HTML. Because browser-side keys are visible
+to visitors, rely on the sanitized API response for privacy.
 
 ### Register Slash Commands on Railway
 
@@ -161,12 +200,17 @@ Example daily backup:
 | Method | Path | Auth |
 | --- | --- | --- |
 | `GET` | `/health` | none |
+| `GET` | `/api/site` | optional `SITE_API_KEY` |
+| `GET` | `/api/site/commands` | optional `SITE_API_KEY` |
+| `GET` | `/api/site/weekly-xp` | optional `SITE_API_KEY` |
 | `POST` | `/webhook/loot` | `Authorization: Bearer <loot token>` |
 | `GET` | `/admin/guilds?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
 | `GET` | `/admin/guilds/:id?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
 | `GET` | `/admin/stats?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
 
 Leave `ADMIN_SECRET` unset if you do not want admin HTTP endpoints enabled.
+Leave `SITE_API_KEY` unset only if the sanitized public stats API may be public.
+Set `SITE_DIR` when you want the bot process to serve the external site folder.
 
 ## Discord Application Settings
 

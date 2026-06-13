@@ -14,6 +14,7 @@ import { queries } from '../db/index.js';
 import { getItemPrice } from '../services/prices.js';
 import { buildBigDropEmbed } from '../utils/embeds.js';
 import logger from '../utils/logger.js';
+import { createSiteApiRouter, resolveSiteDir } from './siteApi.js';
 
 const DATA_DIR   = process.env.DATA_DIR ?? './data';
 const GUILDS_DIR = join(DATA_DIR, 'guilds');
@@ -37,6 +38,7 @@ function adminAuth(req, res) {
 export function createServer(client) {
   const app = express();
   app.use(express.json());
+  app.use(createSiteApiRouter(client));
 
   // ── Health ────────────────────────────────────────────────────────────────
 
@@ -170,7 +172,13 @@ export function createServer(client) {
 
   // ── Start ─────────────────────────────────────────────────────────────────
 
-  const port = parseInt(process.env.PORT ?? '3000', 10);
+  const siteDir = resolveSiteDir();
+  if (siteDir) {
+    app.use(express.static(siteDir, { index: ['RuneTracker.html', 'index.html'] }));
+    logger.info(`[HTTP] Serving site from ${siteDir}`);
+  }
+
+  const port = parseInt(process.env.PORT ?? '8080', 10);
   app.listen(port, '0.0.0.0', () => logger.info(`[HTTP] Listening on 0.0.0.0:${port}`));
 
   return app;

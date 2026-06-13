@@ -12,6 +12,8 @@ leaderboards, and can receive RuneLite loot webhook submissions.
 - Link a Wise Old Man group and sync members automatically.
 - Post weekly XP leaderboards with Wise Old Man's rolling `week` gains period.
 - Receive loot webhook payloads and post big-drop notifications.
+- Expose a sanitized public site API for live website stats, command lists, and
+  leaderboards.
 - Store guild settings and snapshots in local JSON files under `DATA_DIR`.
 - Expose health and optional admin HTTP endpoints for hosted deployments.
 
@@ -79,8 +81,12 @@ All runtime configuration comes from environment variables.
 | `TRACKER_INTERVAL_MS` | No | `300000` | Background polling interval in milliseconds. |
 | `DATA_DIR` | No | `./data` | Directory for guild configs, snapshots, loot entries, and cooldowns. |
 | `LOG_LEVEL` | No | `info` | `error`, `warn`, `info`, or `debug`. |
-| `PORT` | No | `3000` | HTTP server port for health, loot webhook, and admin endpoints. |
+| `PORT` | No | `8080` | HTTP server port for health, loot webhook, admin endpoints, and the site API. |
 | `ADMIN_SECRET` | No | none | Enables `/admin/*` HTTP endpoints when set. |
+| `SITE_DIR` | No | none | Optional folder to serve as the public website, for example `../site`. |
+| `SITE_API_KEY` | No | none | Optional key required by `/api/site*` via `X-Site-Key` or `?key=`. |
+| `SITE_CORS_ORIGIN` | No | `https://runetracker.icu,https://www.runetracker.icu` | CORS origin for the sanitized public site API. |
+| `SITE_WEEKLY_CACHE_MS` | No | `900000` | Cache duration for Wise Old Man weekly XP lookups used by the site. |
 
 Never commit `.env`, `data/`, `logs/`, tokens, or production snapshots.
 
@@ -113,10 +119,37 @@ The bot starts an Express server from `src/http/server.js`.
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/health` | none | Hosting health check. |
+| `GET` | `/api/site` | optional `SITE_API_KEY` | Sanitized live website data: summary, guilds, leaderboards, and commands. |
+| `GET` | `/api/site/commands` | optional `SITE_API_KEY` | Slash command catalog generated from the bot command definitions. |
+| `GET` | `/api/site/weekly-xp` | optional `SITE_API_KEY` | Cached Wise Old Man weekly XP leaderboard for tracked players. |
 | `POST` | `/webhook/loot` | `Authorization: Bearer <loot token>` | RuneLite loot payload submission. |
 | `GET` | `/admin/guilds?key=<ADMIN_SECRET>` | query key | Admin overview when `ADMIN_SECRET` is configured. |
 | `GET` | `/admin/guilds/:id?key=<ADMIN_SECRET>` | query key | Admin detail for one guild. |
 | `GET` | `/admin/stats?key=<ADMIN_SECRET>` | query key | High-level admin stats. |
+
+The site API intentionally omits private fields such as loot webhook tokens,
+admin user IDs, raw guild files, and cooldown data. If the site is hosted by
+the bot itself, set `SITE_DIR` to the external site folder.
+
+## Website Hosting
+
+The website can be hosted separately from the bot, for example on shared
+hosting while the bot runs on Railway.
+
+1. Deploy the bot and enable the public Railway domain `https://api.runetracker.icu`.
+2. Set `SITE_CORS_ORIGIN` to the website origin, for example
+   `https://runetracker.icu,https://www.runetracker.icu`.
+3. Leave `SITE_DIR` empty when the website is not served by the bot process.
+4. Open the website with the bot API base in the query string:
+   `https://runetracker.icu/RuneTracker.html?api=https://api.runetracker.icu`.
+
+The bundled site template already defaults to `https://api.runetracker.icu`, so
+the query string is only needed for testing another API host.
+
+If `SITE_API_KEY` is configured, add `&key=<SITE_API_KEY>` or set
+`window.RUNETRACKER_SITE_KEY` in the HTML. Browser-side keys are visible to
+visitors, so they are useful only as light abuse protection; the API response is
+sanitized by design.
 
 ## Data Storage
 
