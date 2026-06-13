@@ -1,254 +1,196 @@
-# Deploying Muskebeers
+# Deployment Guide
 
-Two options: **Railway** (easiest, free tier available) or a **self-managed Ubuntu VPS**.
+This guide covers two common deployment paths for Muskebeers:
 
----
+- Railway or another container host
+- A self-managed Ubuntu VPS with PM2
 
-## Option A – Railway (recommended)
+Before deploying, create a Discord application, add a bot, and invite it with
+the `bot` and `applications.commands` scopes.
 
-Railway runs the bot as a container and manages restarts automatically.
-The only extra step is attaching a Volume so guild data survives redeploys.
+## Required Environment Variables
 
-### A1. Create the project
+| Variable | Description |
+| --- | --- |
+| `DISCORD_TOKEN` | Discord bot token. |
+| `DISCORD_CLIENT_ID` | Discord application/client ID. |
 
-1. Go to **https://railway.app** and create a new project.
-2. Choose **Deploy from GitHub repo** → connect your fork of this repo.
-3. Railway detects `package.json` and will use `npm start` automatically.
+## Recommended Environment Variables
 
-### A2. Add a persistent Volume
+| Variable | Example | Description |
+| --- | --- | --- |
+| `DATA_DIR` | `/data` | Persistent storage path for guild configs and snapshots. |
+| `PORT` | `3000` | HTTP server port for `/health`, `/webhook/loot`, and admin endpoints. |
+| `WOM_REQUESTS_PER_MINUTE` | `40` | Wise Old Man request throttle. |
+| `TRACKER_INTERVAL_MS` | `300000` | Tracker polling interval in milliseconds. |
+| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, or `debug`. |
+| `WOM_API_KEY` | empty | Optional Wise Old Man API key. |
+| `ADMIN_SECRET` | long random string | Optional secret for `/admin/*` endpoints. |
 
-> Without this step every redeploy wipes all guild configs and snapshots.
+Keep all secrets out of GitHub issues, screenshots, logs, and commits.
 
-1. In your Railway project, click **+ Add Service → Volume**.
-2. Name it `muskebeers-data` (or anything).
-3. Set the **Mount Path** to `/data`.
-4. Railway attaches the volume to the bot container automatically.
+## Railway
 
-### A3. Set environment variables
+1. Create a Railway project.
+2. Choose "Deploy from GitHub repo" and select this repository.
+3. Add a persistent volume.
+4. Mount the volume at `/data`.
+5. Set `DATA_DIR=/data`.
+6. Add the required Discord environment variables.
+7. Deploy.
 
-In the Railway project → **Variables** tab, add:
+Railway should use `npm start` automatically from `package.json`.
 
-| Variable | Value |
-|---|---|
-| `DISCORD_TOKEN` | Your bot token |
-| `DISCORD_CLIENT_ID` | Your app's Client ID |
-| `DATA_DIR` | `/data` ← must match the Volume mount path |
-| `WOM_API_KEY` | Optional |
-| `TRACKER_INTERVAL_MS` | `300000` (5 min, or adjust) |
-| `WOM_REQUESTS_PER_MINUTE` | `40` |
-| `LOG_LEVEL` | `info` |
+### Register Slash Commands on Railway
 
-### A4. Register slash commands (one-time)
+Slash commands must be registered once, and again after command definitions
+change.
 
-Railway's start command runs `npm start` (the bot). To register slash commands,
-run a one-off command in the Railway shell or locally with your production token:
+The simplest local command is:
 
 ```bash
-# Locally with production .env values:
-DISCORD_TOKEN=... DISCORD_CLIENT_ID=... node deploy-commands.js
+DISCORD_TOKEN=... DISCORD_CLIENT_ID=... npm run deploy
 ```
 
-Or in Railway: open the service → **Settings → Start Command** → temporarily set
-it to `node deploy-commands.js`, deploy once, then revert to `npm start`.
-
-### A5. Deploy
-
-Push to your main branch — Railway redeploys automatically.  
-Check **Logs** to confirm the bot connects and the tracker starts.
-
-### A6. Discord Developer Portal settings
-
-Same as the VPS guide below (section 8).
-
----
-
-## Option B – Ubuntu VPS (self-managed)
-
-This guide walks through a fresh Ubuntu 22.04 / 24.04 VPS setup from zero to a
-running, auto-restarting bot that survives reboots and serves any Discord server
-that invites it.
-
----
-
-## 1. Provision the VPS
-
-Any provider works (Hetzner, DigitalOcean, Linode, etc.).  
-The bot is lightweight — a **1 vCPU / 1 GB RAM / 10 GB disk** instance is plenty.
-
----
-
-## 2. Install Node.js (via nvm)
+For development, register commands to one test guild:
 
 ```bash
-# Install nvm
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-source ~/.bashrc   # or restart your session
+DISCORD_TOKEN=... DISCORD_CLIENT_ID=... GUILD_ID=... npm run deploy
+```
 
-# Install Node 22 LTS and set it as default
+On Windows PowerShell:
+
+```powershell
+$env:DISCORD_TOKEN='...'
+$env:DISCORD_CLIENT_ID='...'
+$env:GUILD_ID='...'
+npm run deploy
+```
+
+## Ubuntu VPS with PM2
+
+These commands assume Ubuntu 22.04 or 24.04.
+
+### Install Node.js 22
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
 nvm install 22
 nvm alias default 22
-node -v   # should print v22.x.x
+node -v
 ```
 
----
-
-## 3. Install PM2
-
-```bash
-npm install -g pm2
-```
-
----
-
-## 4. Clone the repository
+### Install and Configure the Bot
 
 ```bash
 cd ~
-git clone https://github.com/jorenf/muskebeers.git
-cd muskebeers
+git clone https://github.com/jorenf/Muskebeers.git
+cd Muskebeers
 npm install
-```
-
----
-
-## 5. Configure the environment
-
-```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in at minimum:
+Set at least `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`.
 
-| Variable | Where to find it |
-|---|---|
-| `DISCORD_TOKEN` | Discord Developer Portal → Your App → Bot → Token |
-| `DISCORD_CLIENT_ID` | Discord Developer Portal → Your App → General Information → Application ID |
-| `WOM_API_KEY` | Optional – https://wiseoldman.net/api-docs (free) |
-
-Save with **Ctrl+O**, exit with **Ctrl+X**.
-
----
-
-## 6. Register slash commands
-
-This only needs to run once (or after you add/rename commands):
+Register commands:
 
 ```bash
-node deploy-commands.js
+npm run deploy
 ```
 
-You should see `✅ Registered N slash commands globally.`
-
----
-
-## 7. Start the bot with PM2
+### Run with PM2
 
 ```bash
+npm install -g pm2
 pm2 start ecosystem.config.cjs
-pm2 save          # persist the process list across reboots
-pm2 startup       # prints a command – copy and run it to enable auto-start
+pm2 save
+pm2 startup
 ```
 
-Verify the bot is running:
+Check logs:
 
 ```bash
 pm2 status
-pm2 logs muskebeers --lines 50
+pm2 logs muskebeers --lines 100
 ```
 
----
+Restart after updates:
 
-## 8. Discord Developer Portal settings
-
-1. Go to **https://discord.com/developers/applications** and open your app.
-2. **Bot** tab:
-   - Enable **Message Content Intent** (not required currently but useful for future).
-   - Enable **Server Members Intent** (needed if you want member lookups later).
-   - Toggle **Public Bot** ✅ so anyone can invite it.
-3. **Installation** tab → **Install Link**:
-   - Choose **Discord Provided Link**.
-   - Under **Default Install Settings → Guild Install → Scopes**, add:  
-     `bot` + `applications.commands`
-   - Under **Bot Permissions**, select:  
-     `Send Messages`, `Embed Links`, `Read Message History`, `View Channels`  
-     (permission integer **`84992`**)
-4. Copy the **Install Link** and share it — users visit the link, pick their
-   server, and the bot appears immediately.
-
----
-
-## 9. Data layout on disk
-
+```bash
+git pull
+npm install
+pm2 restart muskebeers
 ```
+
+If commands changed:
+
+```bash
+npm run deploy
+pm2 restart muskebeers
+```
+
+## Data Persistence
+
+The bot stores runtime data in JSON files:
+
+```text
 data/
   guilds/
-    {guild_id}.json   ← per-server settings (channel, players, admins, options)
+    {guild_id}.json
   snapshots/
-    {wom_id}.json     ← last known WOM snapshot per player (shared across guilds)
+    {wom_id}.json
 logs/
   out.log
   error.log
 ```
 
-Back up the `data/` folder periodically:
+Back up `DATA_DIR` regularly. The files may contain guild IDs, admin user IDs,
+loot webhook tokens, tracked players, and loot history, so treat backups as
+private.
 
-```bash
-# Example: daily tar backup kept for 7 days
-0 2 * * * tar czf ~/backups/muskebeers-$(date +\%F).tar.gz ~/muskebeers/data && find ~/backups -name '*.tar.gz' -mtime +7 -delete
+Example daily backup:
+
+```cron
+0 2 * * * tar czf ~/backups/muskebeers-$(date +\%F).tar.gz ~/Muskebeers/data && find ~/backups -name '*.tar.gz' -mtime +7 -delete
 ```
 
----
+## HTTP Endpoints
 
-## 10. Useful PM2 commands
+| Method | Path | Auth |
+| --- | --- | --- |
+| `GET` | `/health` | none |
+| `POST` | `/webhook/loot` | `Authorization: Bearer <loot token>` |
+| `GET` | `/admin/guilds?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
+| `GET` | `/admin/guilds/:id?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
+| `GET` | `/admin/stats?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
 
-```bash
-pm2 status                  # see all processes
-pm2 logs muskebeers         # live log tail
-pm2 logs muskebeers --lines 200  # last 200 lines
-pm2 restart muskebeers      # restart after a code update
-pm2 stop muskebeers         # pause without removing
-pm2 delete muskebeers       # remove from PM2 entirely
-```
+Leave `ADMIN_SECRET` unset if you do not want admin HTTP endpoints enabled.
 
----
+## Discord Application Settings
 
-## 11. Updating the bot
+In the Discord Developer Portal:
 
-```bash
-cd ~/muskebeers
-git pull
-npm install          # only needed if package.json changed
-pm2 restart muskebeers
-```
+1. Open your application.
+2. Go to the Bot page.
+3. Keep "Public Bot" enabled if others should be able to invite it.
+4. Go to Installation or OAuth2 URL Generator.
+5. Add scopes `bot` and `applications.commands`.
+6. Add bot permissions:
+   - View Channels
+   - Send Messages
+   - Embed Links
+   - Read Message History
 
-If you added or renamed slash commands, re-run:
+The bot currently uses slash commands only, so it does not require Message
+Content Intent.
 
-```bash
-node deploy-commands.js
-pm2 restart muskebeers
-```
+## Troubleshooting
 
----
-
-## 12. Log rotation (optional but recommended)
-
-```bash
-pm2 install pm2-logrotate
-pm2 set pm2-logrotate:max_size 20M
-pm2 set pm2-logrotate:retain 7
-pm2 set pm2-logrotate:compress true
-```
-
----
-
-## 13. Firewall
-
-The bot only makes **outbound** HTTPS requests (Discord API, WOM API) — no
-inbound ports need to be opened beyond SSH.
-
-```bash
-ufw allow OpenSSH
-ufw enable
-ufw status
-```
+- If slash commands do not appear, global registration can take up to an hour.
+- Use `GUILD_ID` for instant command updates in a test guild.
+- If hosted data disappears after deploys, confirm `DATA_DIR` points to a
+  persistent volume.
+- If Wise Old Man calls fail often, lower `WOM_REQUESTS_PER_MINUTE`.
+- If loot webhooks return 401, regenerate the loot token with `/loottoken`.

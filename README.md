@@ -1,216 +1,186 @@
-# Muskebeers – OSRS Discord Tracking Bot
+# Muskebeers OSRS Discord Bot
 
-A production-ready Discord bot that tracks Old School RuneScape players via the
-[WiseOldMan API](https://wiseoldman.net/) and posts updates in your server.
-
----
+Muskebeers is a Discord bot for Old School RuneScape communities. It tracks
+players through the Wise Old Man API, posts progress updates, builds weekly XP
+leaderboards, and can receive RuneLite loot webhook submissions.
 
 ## Features
 
-| Command | Description |
-|---|---|
-| `/setchannel #channel` | Set the channel where tracking updates are posted *(admin only)* |
-| `/track <username>` | Start tracking an OSRS player *(admin only)* |
-| `/trackoption [category] [enabled]` | Enable/disable notification categories *(admin only)* |
+- Track OSRS players by Wise Old Man player ID, so name changes keep working.
+- Post level-ups, boss kill count increases, clue completions, achievements,
+  total-level milestones, level 99s, and boss KC milestones.
+- Link a Wise Old Man group and sync members automatically.
+- Post weekly XP leaderboards with Wise Old Man's rolling `week` gains period.
+- Receive loot webhook payloads and post big-drop notifications.
+- Store guild settings and snapshots in local JSON files under `DATA_DIR`.
+- Expose health and optional admin HTTP endpoints for hosted deployments.
 
-**Tracked categories**
+## Requirements
 
-- Level-ups (any skill)
-- Boss kill count increases
-- WiseOldMan achievement unlocks
-- Clue scroll completions (all tiers)
+- Node.js 22.x
+- A Discord application and bot token
+- Network access to Discord, Wise Old Man, and the OSRS Wiki price APIs
 
-**Automatic username change detection** – the bot uses the WOM player ID as
-the stable key, so if a player renames themselves it keeps tracking and posts a
-name-change notification.
-
----
-
-## Project structure
-
-```
-muskebeers/
-├── index.js                  # Entry point
-├── deploy-commands.js        # One-time slash command registration
-├── package.json
-├── .env.example
-└── src/
-    ├── commands/
-    │   ├── setchannel.js
-    │   ├── track.js
-    │   └── trackoption.js
-    ├── events/
-    │   ├── ready.js
-    │   └── interactionCreate.js
-    ├── services/
-    │   ├── wom.js            # WiseOldMan API wrapper
-    │   ├── tracker.js        # Background polling + diff logic
-    │   └── notifier.js       # Discord embed dispatch
-    ├── db/
-    │   └── index.js          # SQLite schema + prepared statements
-    └── utils/
-        ├── logger.js
-        └── embeds.js
-```
-
----
-
-## Prerequisites
-
-- **Node.js 18+** (uses native `fetch`)
-- A Discord bot token
-- An internet connection (to reach the WiseOldMan API)
-
----
-
-## Step 1 – Create a Discord Bot
-
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Click **New Application**, give it a name (e.g. *Muskebeers*).
-3. Navigate to **Bot** → click **Add Bot**.
-4. Under **Privileged Gateway Intents**, no extra intents are needed.
-5. Copy the **Token** – this is your `DISCORD_TOKEN`.
-6. On the **OAuth2 → General** page, copy the **Application ID** – this is your
-   `DISCORD_CLIENT_ID`.
-7. Navigate to **OAuth2 → URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Bot Permissions: `Send Messages`, `Embed Links`, `View Channel`
-8. Open the generated URL to invite the bot to your server.
-
----
-
-## Step 2 – Installation
+## Quick Start
 
 ```bash
-# Clone the repo (or extract the project folder)
-git clone <repo-url>
-cd muskebeers
-
-# Install dependencies
+git clone https://github.com/jorenf/Muskebeers.git
+cd Muskebeers
 npm install
-
-# Copy the example env file and fill in your values
 cp .env.example .env
 ```
 
----
-
-## Step 3 – Configure `.env`
-
-Edit the `.env` file:
+Edit `.env` and set at least:
 
 ```env
-# Required
-DISCORD_TOKEN=your_bot_token_here
-DISCORD_CLIENT_ID=your_client_id_here
-
-# Optional – get one at https://wiseoldman.net/ for higher rate limits
-WOM_API_KEY=
-
-# How often to poll WOM (ms). Default 5 minutes.
-TRACKER_INTERVAL_MS=300000
-
-# Delay between WOM requests (ms). Default 1.5 s. Don't go below 1000.
-WOM_REQUEST_DELAY_MS=1500
-
-# SQLite file path
-DB_PATH=./data/muskebeers.db
-
-# Log level: debug | info | warn | error
-LOG_LEVEL=info
+DISCORD_TOKEN=your_discord_bot_token_here
+DISCORD_CLIENT_ID=your_discord_client_id_here
 ```
 
----
-
-## Step 4 – Register Slash Commands
-
-Run this **once** (and again whenever you change a command's definition):
+Register slash commands:
 
 ```bash
 npm run deploy
 ```
 
-> For instant updates during development, register to a single guild:
-> ```bash
-> GUILD_ID=your_guild_id npm run deploy
-> ```
-
----
-
-## Step 5 – Run the Bot
+Start the bot:
 
 ```bash
 npm start
 ```
 
-For production, use a process manager such as [PM2](https://pm2.keymetrics.io/):
+## Discord Setup
 
-```bash
-npm install -g pm2
-pm2 start index.js --name muskebeers
-pm2 save
-pm2 startup   # auto-start on server reboot
-```
+1. Create an application in the Discord Developer Portal.
+2. Add a bot and copy its token into `DISCORD_TOKEN`.
+3. Copy the application ID into `DISCORD_CLIENT_ID`.
+4. Invite the bot with these scopes:
+   - `bot`
+   - `applications.commands`
+5. Recommended bot permissions:
+   - View Channels
+   - Send Messages
+   - Embed Links
+   - Read Message History
 
-Or with Docker:
+The bot only uses slash commands and the `Guilds` gateway intent.
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --omit=dev
-COPY . .
-CMD ["node", "index.js"]
-```
+## Configuration
 
----
-
-## Step 6 – Set Up Your Server
-
-Once the bot is running and has joined your server:
-
-1. **Set the announcement channel**
-   ```
-   /setchannel #osrs-updates
-   ```
-
-2. **Track a player**
-   ```
-   /track zezima
-   ```
-
-3. *(Optional)* **Customise notifications**
-   ```
-   /trackoption             (view current settings)
-   /trackoption category:bosses enabled:false
-   /trackoption category:clues  enabled:true
-   ```
-
----
-
-## Database
-
-Data is stored as a JSON file (no native dependencies, works on all platforms).
-The file is created automatically at the path configured in `DB_PATH`
-(default `./data/muskebeers.json`).
-
-| Collection | Purpose |
-|---|---|
-| `guilds` | Guild → announcement channel mapping |
-| `players` | Tracked players per guild |
-| `tracking_options` | Per-guild notification toggles |
-| `player_snapshots` | Last known stats snapshot per player |
-
----
-
-## Environment Variables Reference
+All runtime configuration comes from environment variables.
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
-| `DISCORD_TOKEN` | ✅ | – | Discord bot token |
-| `DISCORD_CLIENT_ID` | ✅ | – | Discord application ID |
-| `WOM_API_KEY` | ❌ | – | WiseOldMan API key (optional) |
-| `TRACKER_INTERVAL_MS` | ❌ | `300000` | Poll interval in milliseconds |
-| `WOM_REQUEST_DELAY_MS` | ❌ | `1500` | Delay between WOM requests (ms) |
-| `DB_PATH` | ❌ | `./data/muskebeers.json` | Path to JSON data file |
-| `LOG_LEVEL` | ❌ | `info` | Minimum log level |
+| --- | --- | --- | --- |
+| `DISCORD_TOKEN` | Yes | none | Discord bot token. |
+| `DISCORD_CLIENT_ID` | Yes | none | Discord application/client ID. |
+| `GUILD_ID` | No | none | Registers slash commands to one guild for fast development when running `npm run deploy`. |
+| `WOM_API_KEY` | No | none | Wise Old Man API key for higher rate limits. |
+| `WOM_REQUESTS_PER_MINUTE` | No | `40` | Shared Wise Old Man request throttle. Keep below WOM's public limit. |
+| `TRACKER_INTERVAL_MS` | No | `300000` | Background polling interval in milliseconds. |
+| `DATA_DIR` | No | `./data` | Directory for guild configs, snapshots, loot entries, and cooldowns. |
+| `LOG_LEVEL` | No | `info` | `error`, `warn`, `info`, or `debug`. |
+| `PORT` | No | `3000` | HTTP server port for health, loot webhook, and admin endpoints. |
+| `ADMIN_SECRET` | No | none | Enables `/admin/*` HTTP endpoints when set. |
+
+Never commit `.env`, `data/`, `logs/`, tokens, or production snapshots.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `/setup` | Guided first-time setup. |
+| `/setchannel` | Set the channel for tracking updates. |
+| `/track` | Start tracking a player. |
+| `/untrack` | Stop tracking a player. |
+| `/setgroup` | Link a Wise Old Man group and import members. |
+| `/trackoption` | Enable or disable notification categories. |
+| `/spamfilter` | Configure notification thresholds and cooldowns. |
+| `/weeklytop` | Post the weekly XP leaderboard. |
+| `/lookup` | Show a Wise Old Man player overview. |
+| `/status` | Show tracker status and snapshot times. |
+| `/loottoken` | Generate or show the RuneLite loot webhook token. |
+| `/setlootchannel` | Set the big-drop notification channel and threshold. |
+| `/loot` | Show loot totals. |
+| `/topdrop` | Show top single drops. |
+| `/settings` | Show current server settings. |
+| `/checkupdate` | Manually trigger updates. |
+| `/help` | Show command help. |
+
+## HTTP Endpoints
+
+The bot starts an Express server from `src/http/server.js`.
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `GET` | `/health` | none | Hosting health check. |
+| `POST` | `/webhook/loot` | `Authorization: Bearer <loot token>` | RuneLite loot payload submission. |
+| `GET` | `/admin/guilds?key=<ADMIN_SECRET>` | query key | Admin overview when `ADMIN_SECRET` is configured. |
+| `GET` | `/admin/guilds/:id?key=<ADMIN_SECRET>` | query key | Admin detail for one guild. |
+| `GET` | `/admin/stats?key=<ADMIN_SECRET>` | query key | High-level admin stats. |
+
+## Data Storage
+
+Data is stored as JSON files. This keeps deployment simple and avoids native
+database dependencies.
+
+```text
+data/
+  guilds/
+    {guild_id}.json
+  snapshots/
+    {wom_id}.json
+logs/
+  out.log
+  error.log
+```
+
+Back up `DATA_DIR` before redeploys or server moves. On Railway or similar
+hosts, mount a persistent volume and set `DATA_DIR` to that path.
+
+## Development
+
+```bash
+npm install
+npm test
+node --check index.js
+```
+
+Use a guild-scoped command deploy while developing:
+
+```bash
+GUILD_ID=your_test_guild_id npm run deploy
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:GUILD_ID='your_test_guild_id'; npm run deploy
+```
+
+## Deployment
+
+See [DEPLOY.md](./DEPLOY.md) for Railway and VPS deployment notes.
+
+For PM2:
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+## Security
+
+- Keep Discord, Wise Old Man, loot, and admin tokens secret.
+- Treat `data/` as private because it contains guild IDs, tracked player lists,
+  admin IDs, loot tokens, and history.
+- Rotate any token that was exposed in logs, screenshots, issues, or commits.
+- Report vulnerabilities privately using the guidance in [SECURITY.md](./SECURITY.md).
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before
+opening an issue or pull request.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).

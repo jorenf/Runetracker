@@ -69,7 +69,7 @@ for (const file of readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
 }
 
 // ---------------------------------------------------------------------------
-// Initialise SQLite database (creates tables if they don't exist).
+// Initialise file storage directories.
 // ---------------------------------------------------------------------------
 initDatabase();
 logger.info('Database initialised.');
