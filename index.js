@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase } from './src/db/index.js';
 import { startTracker } from './src/services/tracker.js';
+import { removeRetiredLootCommands } from './src/services/lootCleanup.js';
 import { createServer } from './src/http/server.js';
 import logger from './src/utils/logger.js';
 
@@ -85,6 +86,13 @@ createServer(client);
 // ---------------------------------------------------------------------------
 client.once('ready', () => {
   startTracker(client);
+  removeRetiredLootCommands(client)
+    .then(({ removedCommands, guildsChecked }) => {
+      logger.info(`[Cleanup] Removed ${removedCommands} retired loot command(s) across ${guildsChecked} guild(s).`);
+    })
+    .catch(err => {
+      logger.error('[Cleanup] Could not remove retired loot commands:', err);
+    });
 });
 
 // ---------------------------------------------------------------------------

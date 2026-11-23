@@ -98,7 +98,41 @@ export function initDatabase() {
   for (const dir of [GUILDS_DIR, SNAPSHOTS_DIR]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
+  const removedLootData = removeLegacyLootData();
+  if (removedLootData) {
+    logger.info(`[DB] Removed legacy loot data from ${removedLootData} guild file(s).`);
+  }
   logger.debug(`[DB] Data dir: ${DATA_DIR} | guilds: ${allGuildIds().length}`);
+}
+
+function removeLegacyLootData() {
+  const fields = ['loot_token', 'loot_channel_id', 'loot_threshold_gp', 'loot_entries'];
+  let updated = 0;
+
+  for (const id of allGuildIds()) {
+    const path = guildPath(id);
+    let guild;
+    try {
+      guild = JSON.parse(readFileSync(path, 'utf8'));
+    } catch (error) {
+      logger.warn(`[DB] Could not clean legacy loot data in ${id}.json: ${error.message}`);
+      continue;
+    }
+
+    if (!guild || typeof guild !== 'object' || Array.isArray(guild)) {
+      logger.warn(`[DB] Could not clean legacy loot data in ${id}.json: expected a guild object.`);
+      continue;
+    }
+
+    const hasLootData = fields.some(field => Object.hasOwn(guild, field));
+    if (!hasLootData) continue;
+
+    for (const field of fields) delete guild[field];
+    writeJSON(path, guild);
+    updated += 1;
+  }
+
+  return updated;
 }
 
 // ---------------------------------------------------------------------------

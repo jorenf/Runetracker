@@ -173,15 +173,9 @@ npm run deploy
 pm2 restart muskebeers
 ```
 
-To remove the retired loot commands and their saved guild settings, configure
-`DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and `DATA_DIR`, then run:
-
-```bash
-npm run cleanup:loot
-```
-
-This removes only the five loot slash commands from global and bot-joined guild
-registrations, and deletes only loot-related fields from guild JSON files.
+The next normal bot startup automatically removes the retired loot slash
+commands from global and bot-joined guild registrations and deletes legacy
+loot fields from saved guild JSON files. No manual Railway command is needed.
 
 ## Data Persistence
 
