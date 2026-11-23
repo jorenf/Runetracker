@@ -20,7 +20,7 @@ the `bot` and `applications.commands` scopes.
 | Variable | Example | Description |
 | --- | --- | --- |
 | `DATA_DIR` | `/data` | Persistent storage path for guild configs and snapshots. |
-| `PORT` | `8080` | HTTP server port for `/health`, `/webhook/loot`, admin endpoints, and `/api/site*`. |
+| `PORT` | `8080` | HTTP server port for `/health`, admin endpoints, and `/api/site*`. |
 | `WOM_REQUESTS_PER_MINUTE` | `40` | Wise Old Man request throttle. |
 | `TRACKER_INTERVAL_MS` | `300000` | Tracker polling interval in milliseconds. |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, or `debug`. |
@@ -173,6 +173,16 @@ npm run deploy
 pm2 restart muskebeers
 ```
 
+To remove the retired loot commands and their saved guild settings, configure
+`DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and `DATA_DIR`, then run:
+
+```bash
+npm run cleanup:loot
+```
+
+This removes only the five loot slash commands from global and bot-joined guild
+registrations, and deletes only loot-related fields from guild JSON files.
+
 ## Data Persistence
 
 The bot stores runtime data in JSON files:
@@ -189,8 +199,7 @@ logs/
 ```
 
 Back up `DATA_DIR` regularly. The files may contain guild IDs, admin user IDs,
-loot webhook tokens, tracked players, and loot history, so treat backups as
-private.
+and tracked players, so treat backups as private.
 
 Example daily backup:
 
@@ -206,7 +215,6 @@ Example daily backup:
 | `GET` | `/api/site` | optional `SITE_API_KEY` |
 | `GET` | `/api/site/commands` | optional `SITE_API_KEY` |
 | `GET` | `/api/site/weekly-xp` | optional `SITE_API_KEY` |
-| `POST` | `/webhook/loot` | `Authorization: Bearer <loot token>` |
 | `GET` | `/admin/guilds?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
 | `GET` | `/admin/guilds/:id?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
 | `GET` | `/admin/stats?key=<ADMIN_SECRET>` | `ADMIN_SECRET` required |
@@ -243,4 +251,3 @@ Content Intent.
   confirm the `WOM_API_KEY` variable is set correctly. The bot logs whether a
   key is configured, without logging its value.
 - If Wise Old Man calls fail often, lower `WOM_REQUESTS_PER_MINUTE`.
-- If loot webhooks return 401, regenerate the loot token with `/loottoken`.

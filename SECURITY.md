@@ -22,7 +22,6 @@ Never commit:
 
 - Discord bot tokens
 - Wise Old Man API keys
-- Loot webhook tokens
 - `ADMIN_SECRET`
 - `.env`
 - `data/`

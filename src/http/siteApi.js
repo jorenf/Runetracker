@@ -41,7 +41,6 @@ async function collectGuilds(client) {
   const rows = queries.getAllGuilds.all();
   return Promise.all(rows.map(async row => {
     const players = queries.getPlayersByGuild.all(row.guild_id);
-    const lootSettings = queries.getLootSettings.get(row.guild_id);
     const group = queries.getWomGroup.get(row.guild_id);
     const opts = getEffectiveOptions(row.guild_id);
     const discord = await discordGuild(client, row.guild_id);
@@ -53,9 +52,7 @@ async function collectGuilds(client) {
       member_count: discord?.memberCount ?? null,
       player_count: players.length,
       wom_group: group?.name ?? null,
-      loot_entries: lootSettings?.entry_count ?? 0,
       tracking_enabled: trackingEnabled,
-      has_loot_channel: Boolean(lootSettings?.loot_channel_id),
     });
   }));
 }
@@ -75,24 +72,19 @@ function collectPlayers() {
   return [...byId.values()];
 }
 
-function collectLootEntries() {
-  return queries.getAllGuilds.all().flatMap(row => queries.getLootEntries.all(row.guild_id));
-}
-
 async function collectSiteData(client) {
   const [guilds, players] = await Promise.all([
     collectGuilds(client),
     Promise.resolve(collectPlayers()),
   ]);
-  const lootEntries = collectLootEntries();
   const commands = buildCommandCatalog(client.commands?.values?.() ?? []);
   const trackerState = getTrackerState();
 
   return {
     generated_at: new Date().toISOString(),
-    summary: buildSiteSummary({ guilds, players, lootEntries, trackerState }),
+    summary: buildSiteSummary({ guilds, players, trackerState }),
     guilds,
-    leaderboards: buildLeaderboards(players, lootEntries),
+    leaderboards: buildLeaderboards(players),
     commands,
   };
 }

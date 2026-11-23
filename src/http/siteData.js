@@ -27,14 +27,9 @@ const CATEGORY_BY_COMMAND = {
   status: 'Admin Tools',
   checkupdate: 'Admin Tools',
   weeklytop: 'Admin Tools',
-  loottoken: 'Loot',
-  setlootchannel: 'Loot',
-  loot: 'Loot',
-  topdrop: 'Loot',
-  testdrop: 'Loot',
 };
 
-const CATEGORY_ORDER = ['Setup', 'Tracking', 'Info', 'Admin Tools', 'Loot', 'Other'];
+const CATEGORY_ORDER = ['Setup', 'Tracking', 'Info', 'Admin Tools', 'Other'];
 
 function optionType(type) {
   return OPTION_TYPES[type] ?? String(type ?? 'unknown');
@@ -156,7 +151,7 @@ function bossTotals(player) {
   };
 }
 
-export function buildLeaderboards(players, lootEntries) {
+export function buildLeaderboards(players) {
   const totalLevelRows = topRows(players.map(player => ({
     username: player.username,
     value: numberValue(player.snapshot?.skills?.overall?.level),
@@ -181,29 +176,6 @@ export function buildLeaderboards(players, lootEntries) {
     };
   }));
 
-  const lootByPlayer = new Map();
-  for (const entry of lootEntries ?? []) {
-    const player = String(entry.player ?? 'Unknown');
-    const current = lootByPlayer.get(player) ?? { username: player, value: 0, drops: 0, meta: 'Loot value' };
-    current.value += numberValue(entry.value);
-    current.drops += 1;
-    current.meta = `${current.drops} drop${current.drops === 1 ? '' : 's'}`;
-    lootByPlayer.set(player, current);
-  }
-
-  const recentLootRows = [...(lootEntries ?? [])]
-    .sort((a, b) => numberValue(b.ts) - numberValue(a.ts))
-    .slice(0, 10)
-    .map((entry, index) => ({
-      rank: index + 1,
-      player: entry.player ?? 'Unknown',
-      item_name: entry.item_name ?? 'Unknown item',
-      source: entry.source ?? 'Unknown',
-      value: numberValue(entry.value),
-      quantity: Math.max(1, Number(entry.qty ?? entry.quantity) || 1),
-      ts: entry.ts ?? null,
-    }));
-
   return {
     total_level: {
       label: 'Total level',
@@ -220,34 +192,20 @@ export function buildLeaderboards(players, lootEntries) {
       value_label: 'Kills',
       rows: bossRows,
     },
-    loot: {
-      label: 'Loot value',
-      value_label: 'GP',
-      rows: topRows([...lootByPlayer.values()]),
-    },
-    recent_loot: {
-      label: 'Recent drops',
-      value_label: 'GP',
-      rows: recentLootRows,
-    },
   };
 }
 
-export function buildSiteSummary({ guilds, players, lootEntries, trackerState }) {
+export function buildSiteSummary({ guilds, players, trackerState }) {
   const totalXp = players.reduce((sum, player) => (
     sum + numberValue(player.snapshot?.skills?.overall?.experience)
   ), 0);
   const lastSnapshot = Math.max(0, ...players.map(player => numberValue(player.updated_at)));
-  const totalLootValue = (lootEntries ?? []).reduce((sum, entry) => sum + numberValue(entry.value), 0);
-
   return {
     guilds: guilds.length,
     tracked_players: guilds.reduce((sum, guild) => sum + numberValue(guild.player_count), 0),
     unique_players: players.length,
     snapshots: players.filter(player => player.snapshot).length,
     total_xp: totalXp,
-    total_loot_value: totalLootValue,
-    total_drops: (lootEntries ?? []).length,
     last_snapshot_at: lastSnapshot ? new Date(lastSnapshot).toISOString() : null,
     tracker: {
       running: Boolean(trackerState?.cycleRunning),
@@ -264,9 +222,7 @@ export function sanitizeGuild(raw) {
     member_count: raw.member_count ?? null,
     player_count: numberValue(raw.player_count),
     wom_group: raw.wom_group ?? null,
-    loot_entries: numberValue(raw.loot_entries),
     tracking_enabled: numberValue(raw.tracking_enabled),
-    has_loot_channel: Boolean(raw.has_loot_channel),
   };
 }
 

@@ -2,7 +2,7 @@
 
 Muskebeers is a Discord bot for Old School RuneScape communities. It tracks
 players through the Wise Old Man API, posts progress updates, builds weekly XP
-leaderboards, and can receive RuneLite loot webhook submissions.
+leaderboards, and exposes live tracker data through a site API.
 
 ## Features
 
@@ -11,7 +11,6 @@ leaderboards, and can receive RuneLite loot webhook submissions.
   total-level milestones, level 99s, and boss KC milestones.
 - Link a Wise Old Man group and sync members automatically.
 - Post weekly XP leaderboards with Wise Old Man's rolling `week` gains period.
-- Receive loot webhook payloads and post big-drop notifications.
 - Expose a sanitized public site API for live website stats, command lists, and
   leaderboards.
 - Store guild settings and snapshots in local JSON files under `DATA_DIR`.
@@ -21,7 +20,7 @@ leaderboards, and can receive RuneLite loot webhook submissions.
 
 - Node.js 22.x
 - A Discord application and bot token
-- Network access to Discord, Wise Old Man, and the OSRS Wiki price APIs
+- Network access to Discord and Wise Old Man
 
 ## Quick Start
 
@@ -79,9 +78,9 @@ All runtime configuration comes from environment variables.
 | `WOM_API_KEY` | No | none | Wise Old Man API key for higher rate limits. |
 | `WOM_REQUESTS_PER_MINUTE` | No | `40` | Shared Wise Old Man request throttle. Keep below WOM's public limit. |
 | `TRACKER_INTERVAL_MS` | No | `300000` | Background polling interval in milliseconds. |
-| `DATA_DIR` | No | `./data` | Directory for guild configs, snapshots, loot entries, and cooldowns. |
+| `DATA_DIR` | No | `./data` | Directory for guild configs, snapshots, and cooldowns. |
 | `LOG_LEVEL` | No | `info` | `error`, `warn`, `info`, or `debug`. |
-| `PORT` | No | `8080` | HTTP server port for health, loot webhook, admin endpoints, and the site API. |
+| `PORT` | No | `8080` | HTTP server port for health, admin endpoints, and the site API. |
 | `ADMIN_SECRET` | No | none | Enables `/admin/*` HTTP endpoints when set. |
 | `SITE_DIR` | No | none | Optional folder to serve as the public website, for example `../site`. |
 | `SITE_API_KEY` | No | none | Optional key required by `/api/site*` via `X-Site-Key` or `?key=`. |
@@ -104,10 +103,6 @@ Never commit `.env`, `data/`, `logs/`, tokens, or production snapshots.
 | `/weeklytop` | Post the weekly XP leaderboard. |
 | `/lookup` | Show a Wise Old Man player overview. |
 | `/status` | Show tracker status and snapshot times. |
-| `/loottoken` | Generate or show the RuneLite loot webhook token. |
-| `/setlootchannel` | Set the big-drop notification channel and threshold. |
-| `/loot` | Show loot totals. |
-| `/topdrop` | Show top single drops. |
 | `/settings` | Show current server settings. |
 | `/checkupdate` | Manually trigger updates. |
 | `/help` | Show command help. |
@@ -122,13 +117,12 @@ The bot starts an Express server from `src/http/server.js`.
 | `GET` | `/api/site` | optional `SITE_API_KEY` | Sanitized live website data: summary, guilds, leaderboards, and commands. |
 | `GET` | `/api/site/commands` | optional `SITE_API_KEY` | Slash command catalog generated from the bot command definitions. |
 | `GET` | `/api/site/weekly-xp` | optional `SITE_API_KEY` | Cached Wise Old Man weekly XP leaderboard for tracked players. |
-| `POST` | `/webhook/loot` | `Authorization: Bearer <loot token>` | RuneLite loot payload submission. |
 | `GET` | `/admin/guilds?key=<ADMIN_SECRET>` | query key | Admin overview when `ADMIN_SECRET` is configured. |
 | `GET` | `/admin/guilds/:id?key=<ADMIN_SECRET>` | query key | Admin detail for one guild. |
 | `GET` | `/admin/stats?key=<ADMIN_SECRET>` | query key | High-level admin stats. |
 
-The site API intentionally omits private fields such as loot webhook tokens,
-admin user IDs, raw guild files, and cooldown data. If the site is hosted by
+The site API intentionally omits private fields such as admin user IDs, raw
+guild files, and cooldown data. If the site is hosted by
 the bot itself, set `SITE_DIR` to the external site folder.
 
 ## Website Hosting
@@ -203,9 +197,9 @@ pm2 save
 
 ## Security
 
-- Keep Discord, Wise Old Man, loot, and admin tokens secret.
+- Keep Discord, Wise Old Man, and admin tokens secret.
 - Treat `data/` as private because it contains guild IDs, tracked player lists,
-  admin IDs, loot tokens, and history.
+  admin IDs, and tracker history.
 - Rotate any token that was exposed in logs, screenshots, issues, or commits.
 - Report vulnerabilities privately using the guidance in [SECURITY.md](./SECURITY.md).
 

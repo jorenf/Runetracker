@@ -50,7 +50,7 @@ test('buildCommandCatalog flattens slash commands and subcommands one-to-one', (
   assert.equal(catalog.raw[0].name, 'setadmin');
 });
 
-test('buildLeaderboards derives total level, boss and loot rankings from live data', () => {
+test('buildLeaderboards derives total level, total XP and boss rankings from live data', () => {
   const players = [
     {
       wom_id: 1,
@@ -72,36 +72,24 @@ test('buildLeaderboards derives total level, boss and loot rankings from live da
     },
   ];
 
-  const lootEntries = [
-    { player: 'Alice', item_name: 'Twisted bow', value: 1_500_000_000, ts: 2 },
-    { player: 'Bob', item_name: 'Bandos chestplate', value: 30_000_000, ts: 1 },
-    { player: 'Alice', item_name: 'Dexterous prayer scroll', value: 20_000_000, ts: 3 },
-  ];
-
-  const boards = buildLeaderboards(players, lootEntries);
+  const boards = buildLeaderboards(players);
 
   assert.deepEqual(boards.total_level.rows.map(r => r.username), ['Bob', 'Alice']);
   assert.equal(boards.total_level.rows[0].value, 2000);
   assert.deepEqual(boards.boss_kc.rows.map(r => r.username), ['Bob', 'Alice']);
   assert.equal(boards.boss_kc.rows[0].meta, 'Nex');
-  assert.equal(boards.loot.rows[0].username, 'Alice');
-  assert.equal(boards.loot.rows[0].value, 1_520_000_000);
-  assert.deepEqual(boards.recent_loot.rows.map(r => r.item_name), ['Dexterous prayer scroll', 'Twisted bow', 'Bandos chestplate']);
+  assert.deepEqual(Object.keys(boards), ['total_level', 'total_xp', 'boss_kc']);
 });
 
-test('buildSiteSummary exposes aggregate live counts without private token fields', () => {
+test('buildSiteSummary exposes aggregate live counts', () => {
   const summary = buildSiteSummary({
     guilds: [
-      { name: 'Muskebeers', player_count: 3, loot_entries: 4 },
-      { name: 'Raiders', player_count: 2, loot_entries: 1 },
+      { name: 'Muskebeers', player_count: 3 },
+      { name: 'Raiders', player_count: 2 },
     ],
     players: [
       { wom_id: 1, username: 'Alice', snapshot: { skills: { overall: { experience: 10 } } }, updated_at: 100 },
       { wom_id: 2, username: 'Bob', snapshot: { skills: { overall: { experience: 20 } } }, updated_at: 200 },
-    ],
-    lootEntries: [
-      { value: 50 },
-      { value: 70 },
     ],
     trackerState: { cycleRunning: false, intervalMs: 300000 },
   });
@@ -110,8 +98,10 @@ test('buildSiteSummary exposes aggregate live counts without private token field
   assert.equal(summary.tracked_players, 5);
   assert.equal(summary.unique_players, 2);
   assert.equal(summary.total_xp, 30);
-  assert.equal(summary.total_loot_value, 120);
   assert.equal(summary.last_snapshot_at, '1970-01-01T00:00:00.200Z');
-  assert.equal(Object.hasOwn(summary, 'loot_token'), false);
+  assert.deepEqual(Object.keys(summary), [
+    'guilds', 'tracked_players', 'unique_players', 'snapshots', 'total_xp',
+    'last_snapshot_at', 'tracker',
+  ]);
 });
 

@@ -18,13 +18,13 @@
     "discord-bot",
     "old-school-runescape",
     "osrs",
-    "wise-old-man",
-    "runelite"
+    "wise-old-man"
   ],
   "scripts": {
     "start": "node index.js",
     "test": "node --test",
-    "deploy": "node deploy-commands.js"
+    "deploy": "node deploy-commands.js",
+    "cleanup:loot": "node scripts/remove-loot.js"
   },
   "engines": {
     "node": ">=22 <23"
