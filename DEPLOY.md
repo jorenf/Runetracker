@@ -40,7 +40,10 @@ Keep all secrets out of GitHub issues, screenshots, logs, and commits.
 4. Mount the volume at `/data`.
 5. Set `DATA_DIR=/data`.
 6. Add the required Discord environment variables.
-7. Deploy.
+7. Add `WOM_API_KEY` with your Wise Old Man API key to authenticate WOM API
+   requests and access the limits associated with that key. The bot sends it
+   in the `x-api-key` header. Keep the value private; do not commit it.
+8. Deploy or redeploy after setting the variables.
 
 Railway should use `npm start` automatically from `package.json`.
 
@@ -236,5 +239,8 @@ Content Intent.
 - Use `GUILD_ID` for instant command updates in a test guild.
 - If hosted data disappears after deploys, confirm `DATA_DIR` points to a
   persistent volume.
+- If Wise Old Man calls fail, check Railway logs for the WOM API error and
+  confirm the `WOM_API_KEY` variable is set correctly. The bot logs whether a
+  key is configured, without logging its value.
 - If Wise Old Man calls fail often, lower `WOM_REQUESTS_PER_MINUTE`.
 - If loot webhooks return 401, regenerate the loot token with `/loottoken`.

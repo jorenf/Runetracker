@@ -15,7 +15,9 @@ import { womLimiter } from '../utils/ratelimiter.js';
 const BASE_URL = 'https://api.wiseoldman.net/v2';
 
 /** Optional API key – include if you have one to get higher rate limits. */
-const API_KEY = process.env.WOM_API_KEY;
+const API_KEY = process.env.WOM_API_KEY?.trim();
+
+logger.info(`[WOM] API key ${API_KEY ? 'configured' : 'not configured'} via WOM_API_KEY.`);
 
 /**
  * Internal: fire an HTTP request and return parsed JSON.
