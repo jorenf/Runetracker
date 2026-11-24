@@ -171,6 +171,11 @@ logs/
 Back up `DATA_DIR` before redeploys or server moves. On Railway or similar
 hosts, mount a persistent volume and set `DATA_DIR` to that path.
 
+## Legal
+
+- [Terms of Service](TERMS_OF_SERVICE.md)
+- [Privacy Policy](PRIVACY_POLICY.md)
+
 ## Development
 
 ```bash
