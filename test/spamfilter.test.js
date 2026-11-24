@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasRegularNotifications } from '../src/services/tracker.js';
+import {
+  hasInitializedSnapshotBaseline,
+  hasRegularNotifications,
+} from '../src/services/tracker.js';
 
 const changes = {
   levels: [],
@@ -25,4 +28,13 @@ test('an enabled, filtered change counts as a regular notification', () => {
     { track_levels: 1, track_bosses: 0, track_achievements: 0, track_clues: 0 },
     { ...changes, levels: [{ skill: 'attack', newLevel: 50 }] },
   ), true);
+});
+
+test('legacy snapshots require one silent hiscores baseline synchronization', () => {
+  assert.equal(hasInitializedSnapshotBaseline({ skills: {}, bosses: {} }), false);
+  assert.equal(hasInitializedSnapshotBaseline({
+    skills: {},
+    bosses: {},
+    hiscore_baseline_initialized: true,
+  }), true);
 });

@@ -152,6 +152,10 @@ export function hasRegularNotifications(opts, changes) {
   );
 }
 
+export function hasInitializedSnapshotBaseline(snapshot) {
+  return snapshot?.hiscore_baseline_initialized === true;
+}
+
 // ---------------------------------------------------------------------------
 // Core: process a single player
 // Returns a result object so manual triggers can report back to the user.
@@ -213,6 +217,7 @@ async function processPlayer(client, playerRow) {
   // 3. Load stored baseline
   const storedRow = queries.getSnapshot.get(wom_id);
   const storedSnap = storedRow ? JSON.parse(storedRow.snapshot_json) : null;
+  const baselineReady = hasInitializedSnapshotBaseline(storedSnap);
 
   // 4. Fetch achievements
   let freshAchievements = [];
@@ -236,7 +241,7 @@ async function processPlayer(client, playerRow) {
   let bossKCMilestones    = []; // [{ boss, kc }]
   let firstRun        = false;
 
-  if (storedSnap) {
+  if (storedSnap && baselineReady) {
     levelChanges    = diffSkills(storedSnap, freshSnap);
     bossChanges     = diffBosses(storedSnap, freshSnap);
     clueChanges     = diffClues(storedSnap, freshSnap);
@@ -275,7 +280,9 @@ async function processPlayer(client, playerRow) {
     );
   } else {
     firstRun = true;
-    logger.info(`[Tracker] First snapshot stored for ${currentName} – notifications start next cycle`);
+    logger.info(storedSnap
+      ? `[Tracker] Initializing current hiscores baseline for ${currentName} without catch-up notifications`
+      : `[Tracker] First snapshot stored for ${currentName} – notifications start next cycle`);
   }
 
   // 6. Persist new snapshot (before notifying – prevents double-notify on Discord errors)
@@ -286,6 +293,7 @@ async function processPlayer(client, playerRow) {
       ...freshSnap,
       achievements: achievementState.achievementsForSnapshot,
       achievements_loaded: achievementState.achievementsLoaded,
+      hiscore_baseline_initialized: true,
     }),
     updated_at:    Date.now(),
   });

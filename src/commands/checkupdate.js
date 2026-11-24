@@ -3,7 +3,7 @@
  *
  * /checkupdate [username]
  *
- * Admin-only. Manually triggers a WiseOldMan refresh outside the normal schedule.
+ * Admin-only. Manually triggers a player refresh outside the normal schedule.
  *
  *   /checkupdate              – refresh ALL tracked players in this server
  *   /checkupdate username:X   – refresh only player X
@@ -43,7 +43,7 @@ export default {
 
     const username = interaction.options.getString('username')?.trim();
 
-    // Defer: WOM API calls can take several seconds.
+    // Defer: API calls can take several seconds.
     await interaction.deferReply({ ephemeral: true });
 
     // ── Single player ─────────────────────────────────────────────────────────
@@ -75,8 +75,8 @@ export default {
         embed
           .setColor(COLORS.clue)
           .setDescription(
-            `✅ First snapshot stored for **${result.displayName}**.\n` +
-            `Changes will be detected from the next update onwards.`,
+            `✅ Baseline synchronized for **${result.displayName}** without catch-up notifications.\n` +
+            `New changes will be reported starting with the next update.`,
           );
       } else if (result.nameChanged) {
         embed.setDescription(
