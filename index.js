@@ -12,6 +12,7 @@ import { dirname, join } from 'path';
 import { initDatabase } from './src/db/index.js';
 import { startTracker } from './src/services/tracker.js';
 import { syncApplicationCommands } from './src/services/commandSync.js';
+import { postReleaseAnnouncement } from './src/services/releaseAnnouncement.js';
 import { createServer } from './src/http/server.js';
 import logger from './src/utils/logger.js';
 
@@ -92,6 +93,10 @@ client.once('ready', () => {
     })
     .catch(err => {
       logger.error('[Commands] Could not fully synchronize application commands:', err);
+    });
+  postReleaseAnnouncement(client)
+    .catch(err => {
+      logger.error('[Announcement] Could not process release update:', err);
     });
 });
 

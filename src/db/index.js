@@ -166,6 +166,42 @@ export const queries = {
     },
   },
 
+  claimAnnouncement: {
+    run(guild_id, announcement_id) {
+      const guild = loadGuild(guild_id);
+      if (guild.announcements?.[announcement_id]) return false;
+
+      if (!guild.announcements) guild.announcements = {};
+      guild.announcements[announcement_id] = { status: 'pending', claimed_at: Date.now() };
+      saveGuild(guild);
+      return true;
+    },
+  },
+
+  completeAnnouncement: {
+    run(guild_id, announcement_id, message_id) {
+      mutateGuild(guild_id, guild => {
+        if (!guild.announcements?.[announcement_id]) return;
+        guild.announcements[announcement_id] = {
+          status: 'sent',
+          message_id,
+          sent_at: Date.now(),
+        };
+      });
+    },
+  },
+
+  releaseAnnouncementClaim: {
+    run(guild_id, announcement_id) {
+      mutateGuild(guild_id, guild => {
+        if (guild.announcements?.[announcement_id]?.status === 'pending') {
+          delete guild.announcements[announcement_id];
+          if (Object.keys(guild.announcements).length === 0) delete guild.announcements;
+        }
+      });
+    },
+  },
+
   // ── Players ───────────────────────────────────────────────────────────────
 
   upsertPlayer: {

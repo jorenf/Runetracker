@@ -32,6 +32,11 @@ the `bot` and `applications.commands` scopes.
 
 Keep all secrets out of GitHub issues, screenshots, logs, and commits.
 
+The release update is posted once per guild on the next bot startup, if that
+guild has a notifications channel configured. Its delivery marker is stored
+with the guild config, so keep `DATA_DIR` persistent to prevent the announcement
+from being repeated after a restart or redeploy.
+
 ## Railway
 
 1. Create a Railway project.

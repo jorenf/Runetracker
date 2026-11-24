@@ -209,7 +209,12 @@ async function processPlayer(client, playerRow) {
       }
 
       const currentName = playerById.username?.trim();
-      if (!currentName || currentName.toLowerCase() === username.toLowerCase()) {
+      if (!currentName) {
+        logger.warn(`[Tracker] WOM ID ${wom_id} did not return a username; automatic rename cannot proceed.`);
+        return { success: false, displayName: username, error: womError.message };
+      }
+      if (currentName.toLowerCase() === username.toLowerCase()) {
+        logger.warn(`[Tracker] WOM ID ${wom_id} still reports ${username}; no renamed name is available from this WOM profile.`);
         return { success: false, displayName: username, error: womError.message };
       }
 
