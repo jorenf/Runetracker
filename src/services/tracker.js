@@ -18,7 +18,7 @@
  */
 
 import { queries, getEffectiveOptions } from '../db/index.js';
-import { updatePlayer, getPlayerAchievements, getGroupMembers } from './wom.js';
+import { updatePlayer, getPlayerById, getPlayerAchievements, getGroupMembers } from './wom.js';
 import { fetchHiscorePlayer } from './hiscores.js';
 import {
   notifyLevels,
@@ -198,7 +198,37 @@ async function processPlayer(client, playerRow) {
       logger.debug(`[Tracker] WOM fallback update OK for ${username}`);
     } catch (womError) {
       logger.warn(`[Tracker] WOM fallback update failed for ${username}: ${womError.message}`);
-      return { success: false, displayName: username, error: womError.message };
+
+      let playerById;
+      try {
+        playerById = await getPlayerById(wom_id);
+      } catch (idLookupError) {
+        const error = `${womError.message}; WOM ID lookup failed: ${idLookupError.message}`;
+        logger.warn(`[Tracker] Could not resolve ${username} by WOM ID ${wom_id}: ${idLookupError.message}`);
+        return { success: false, displayName: username, error };
+      }
+
+      const currentName = playerById.username?.trim();
+      if (!currentName || currentName.toLowerCase() === username.toLowerCase()) {
+        return { success: false, displayName: username, error: womError.message };
+      }
+
+      logger.info(`[Tracker] WOM ID ${wom_id} name change detected: ${username} → ${currentName}`);
+      try {
+        freshPlayer = await fetchHiscorePlayer(currentName);
+        logger.debug(`[Tracker] OSRS hiscores lookup OK for renamed player ${currentName}`);
+      } catch (renamedHiscoresError) {
+        logger.warn(`[Tracker] OSRS hiscores lookup failed for renamed player ${currentName}: ${renamedHiscoresError.message}; falling back to WOM.`);
+        try {
+          freshPlayer = await updatePlayer(currentName);
+        } catch (renamedWomError) {
+          if (!playerById.latestSnapshot?.data) {
+            return { success: false, displayName: currentName, error: renamedWomError.message };
+          }
+          logger.warn(`[Tracker] WOM update failed for renamed player ${currentName}; using the cached WOM snapshot.`);
+          freshPlayer = playerById;
+        }
+      }
     }
   }
 

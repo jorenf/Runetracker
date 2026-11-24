@@ -107,6 +107,17 @@ export async function getPlayer(username) {
 }
 
 /**
+ * Fetch a player's profile by its stable WOM ID.
+ * Returns the WOM Player object (includes latestSnapshot).
+ *
+ * @param {number|string} playerId
+ * @returns {Promise<object>}
+ */
+export async function getPlayerById(playerId) {
+  return request(`/players/id/${encodeURIComponent(playerId)}`);
+}
+
+/**
  * Ask WOM to update a player's stats (crawls the OSRS hiscores).
  * Returns the updated Player object with a fresh latestSnapshot.
  * Throws if the username is not found on the OSRS hiscores.

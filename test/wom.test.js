@@ -37,6 +37,30 @@ test('WOM requests use the trimmed WOM_API_KEY as the x-api-key header', async (
   }
 });
 
+test('WOM can resolve a renamed player by stable player ID', async () => {
+  const previousFetch = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (url) => {
+    requestUrl = url;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify({ id: 3182839, username: 'blauwe wafel' }),
+    };
+  };
+
+  try {
+    const { getPlayerById } = await import('../src/services/wom.js?test=player-id');
+    const player = await getPlayerById(3182839);
+
+    assert.equal(requestUrl, 'https://api.wiseoldman.net/v2/players/id/3182839');
+    assert.equal(player.username, 'blauwe wafel');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('WOM 429 responses are retried once after honoring Retry-After', async () => {
   const previousRequestsPerMinute = process.env.WOM_REQUESTS_PER_MINUTE;
   const previousFetch = globalThis.fetch;
