@@ -42,7 +42,9 @@ DISCORD_TOKEN=your_discord_bot_token_here
 DISCORD_CLIENT_ID=your_discord_client_id_here
 ```
 
-Register slash commands:
+Slash commands are synchronized automatically at startup. The bot replaces
+the global and per-server command sets with the commands in `src/commands`,
+removing stale commands as it goes. You can still register commands manually:
 
 ```bash
 npm run deploy
@@ -78,7 +80,7 @@ All runtime configuration comes from environment variables.
 | --- | --- | --- | --- |
 | `DISCORD_TOKEN` | Yes | none | Discord bot token. |
 | `DISCORD_CLIENT_ID` | Yes | none | Discord application/client ID. |
-| `GUILD_ID` | No | none | Registers slash commands to one guild for fast development when running `npm run deploy`. |
+| `GUILD_ID` | No | none | Registers commands to one guild for fast development when running `npm run deploy`; startup synchronization updates every connected guild. |
 | `WOM_API_KEY` | No | none | Wise Old Man API key for higher rate limits. |
 | `WOM_REQUESTS_PER_MINUTE` | No | `40` | Shared Wise Old Man request throttle. Values above `59` or invalid values use the default. |
 | `TRACKER_INTERVAL_MS` | No | `300000` | Background polling interval in milliseconds. |

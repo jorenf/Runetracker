@@ -38,6 +38,7 @@ const TOTAL_LEVEL_MILESTONES = [500, 750, 1000, 1250, 1500, 1750, 2000, 2277];
 
 /** Boss KC values that trigger a milestone notification. */
 const BOSS_KC_MILESTONES = [100, 250, 500, 1000, 2000, 5000, 10000];
+const HISCORE_SCHEMA_VERSION = 2;
 
 const INTERVAL_MS = parseInt(process.env.TRACKER_INTERVAL_MS ?? '300000', 10);
 
@@ -153,7 +154,8 @@ export function hasRegularNotifications(opts, changes) {
 }
 
 export function hasInitializedSnapshotBaseline(snapshot) {
-  return snapshot?.hiscore_baseline_initialized === true;
+  return snapshot?.hiscore_baseline_initialized === true
+    && snapshot?.hiscore_schema_version === HISCORE_SCHEMA_VERSION;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +296,7 @@ async function processPlayer(client, playerRow) {
       achievements: achievementState.achievementsForSnapshot,
       achievements_loaded: achievementState.achievementsLoaded,
       hiscore_baseline_initialized: true,
+      hiscore_schema_version: HISCORE_SCHEMA_VERSION,
     }),
     updated_at:    Date.now(),
   });

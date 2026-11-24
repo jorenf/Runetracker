@@ -36,5 +36,11 @@ test('legacy snapshots require one silent hiscores baseline synchronization', ()
     skills: {},
     bosses: {},
     hiscore_baseline_initialized: true,
+  }), false);
+  assert.equal(hasInitializedSnapshotBaseline({
+    skills: {},
+    bosses: {},
+    hiscore_baseline_initialized: true,
+    hiscore_schema_version: 2,
   }), true);
 });

@@ -16,7 +16,9 @@ const SKILLS = [
 ];
 
 const ACTIVITIES = [
-  'league_points', 'bounty_hunter_hunter', 'bounty_hunter_rogue',
+  'grid_points', 'league_points', 'deadman_points',
+  'bounty_hunter_hunter', 'bounty_hunter_rogue',
+  'bounty_hunter_legacy_hunter', 'bounty_hunter_legacy_rogue',
   'clue_scrolls_all', 'clue_scrolls_beginner', 'clue_scrolls_easy', 'clue_scrolls_medium',
   'clue_scrolls_hard', 'clue_scrolls_elite', 'clue_scrolls_master', 'last_man_standing',
   'pvp_arena', 'soul_wars_zeal', 'guardians_of_the_rift', 'colosseum_glory', 'collections_logged',

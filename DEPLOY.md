@@ -85,8 +85,11 @@ to visitors, rely on the sanitized API response for privacy.
 
 ### Register Slash Commands on Railway
 
-Slash commands must be registered once, and again after command definitions
-change.
+At startup, the bot replaces the global slash-command set and each connected
+guild's command set with the definitions in `src/commands`. This adds new
+commands and removes stale ones automatically. Global commands can still take
+up to an hour to propagate; guild commands are synchronized immediately.
+`npm run deploy` remains available for manual registration:
 
 The simplest local command is:
 
@@ -237,8 +240,11 @@ Content Intent.
 
 ## Troubleshooting
 
-- If slash commands do not appear, global registration can take up to an hour.
-- Use `GUILD_ID` for instant command updates in a test guild.
+- If global slash commands do not appear immediately, Discord can take up to
+  an hour to propagate them. The bot also synchronizes guild commands during
+  startup, so connected servers should receive the current commands promptly.
+- Use `GUILD_ID` with `npm run deploy` for manual command updates to one test
+  guild.
 - If hosted data disappears after deploys, confirm `DATA_DIR` points to a
   persistent volume.
 - If Wise Old Man calls fail, check Railway logs for the WOM API error and
