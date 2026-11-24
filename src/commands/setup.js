@@ -6,7 +6,8 @@
  * Steps:
  *   1. Mode selection (Individual Players | WOM Clan | Both)
  *   2. Channel selection (ChannelSelectMenu, text channels only)
- *   3. Tracking options (toggle buttons) + Finish
+ *   3. Tracking options (toggle buttons)
+ *   4. Review and save
  */
 
 import {
@@ -100,9 +101,20 @@ export async function handleWizardInteraction(interaction) {
     session.step = 2;
 
     const embed = buildStep2Embed();
-    const row   = buildChannelSelectRow();
+    const rows  = [buildChannelSelectRow(), buildBackCancelRow('setup:back:mode', 'Back to mode')];
 
-    await interaction.update({ embeds: [embed], components: [row] });
+    await interaction.update({ content: '', embeds: [embed], components: rows });
+    return true;
+  }
+
+  if (customId === 'setup:back:mode') {
+    if (!session) {
+      await interaction.update({ content: 'Session expired. Please run `/setup` again.', embeds: [], components: [] });
+      return true;
+    }
+
+    session.step = 1;
+    await interaction.update({ content: '', embeds: [buildStep1Embed()], components: [buildModeRow()] });
     return true;
   }
 
@@ -113,13 +125,32 @@ export async function handleWizardInteraction(interaction) {
       return true;
     }
 
-    session.channelId = interaction.values[0];
+    const channelId = interaction.values[0];
+    const channel = await interaction.guild.channels.fetch(channelId);
+    const botMember = interaction.guild.members.me ?? await interaction.guild.members.fetchMe();
+    const permissions = channel?.permissionsFor(botMember);
+    const requiredPermissions = [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.EmbedLinks,
+    ];
+
+    if (!permissions?.has(requiredPermissions)) {
+      await interaction.update({
+        content: 'I need **View Channel**, **Send Messages**, and **Embed Links** in the selected channel. Choose another channel or update my permissions.',
+        embeds: [buildStep2Embed()],
+        components: [buildChannelSelectRow(), buildBackCancelRow('setup:back:mode', 'Back to mode')],
+      });
+      return true;
+    }
+
+    session.channelId = channelId;
     session.step = 3;
 
     const embed = buildStep3Embed(session.opts);
     const rows  = buildOptionsRows(session.opts);
 
-    await interaction.update({ embeds: [embed], components: rows });
+    await interaction.update({ content: '', embeds: [embed], components: rows });
     return true;
   }
 
@@ -146,6 +177,51 @@ export async function handleWizardInteraction(interaction) {
     return true;
   }
 
+  if (customId === 'setup:back:channel') {
+    if (!session) {
+      await interaction.update({ content: 'Session expired. Please run `/setup` again.', embeds: [], components: [] });
+      return true;
+    }
+
+    session.step = 2;
+    await interaction.update({
+      content: '',
+      embeds: [buildStep2Embed()],
+      components: [buildChannelSelectRow(), buildBackCancelRow('setup:back:mode', 'Back to mode')],
+    });
+    return true;
+  }
+
+  if (customId === 'setup:review') {
+    if (!session) {
+      await interaction.update({ content: 'Session expired. Please run `/setup` again.', embeds: [], components: [] });
+      return true;
+    }
+
+    session.step = 4;
+    await interaction.update({
+      content: '',
+      embeds: [buildReviewEmbed(session.mode, session.channelId, session.opts)],
+      components: [buildReviewRow()],
+    });
+    return true;
+  }
+
+  if (customId === 'setup:back:options') {
+    if (!session) {
+      await interaction.update({ content: 'Session expired. Please run `/setup` again.', embeds: [], components: [] });
+      return true;
+    }
+
+    session.step = 3;
+    await interaction.update({
+      content: '',
+      embeds: [buildStep3Embed(session.opts)],
+      components: buildOptionsRows(session.opts),
+    });
+    return true;
+  }
+
   // --- Finish ---
   if (customId === 'setup:finish') {
     if (!session) {
@@ -158,6 +234,23 @@ export async function handleWizardInteraction(interaction) {
     if (!channelId) {
       await interaction.update({ content: 'No channel selected. Please run `/setup` again.', embeds: [], components: [] });
       sessions.delete(key);
+      return true;
+    }
+
+    const channel = await interaction.guild.channels.fetch(channelId);
+    const botMember = interaction.guild.members.me ?? await interaction.guild.members.fetchMe();
+    const permissions = channel?.permissionsFor(botMember);
+    if (!permissions?.has([
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.EmbedLinks,
+    ])) {
+      session.step = 2;
+      await interaction.update({
+        content: 'My permissions in that channel changed before setup finished. Choose a channel where I can view, send messages, and embed links.',
+        embeds: [buildStep2Embed()],
+        components: [buildChannelSelectRow(), buildBackCancelRow('setup:back:mode', 'Back to mode')],
+      });
       return true;
     }
 
@@ -175,7 +268,7 @@ export async function handleWizardInteraction(interaction) {
     logger.info(`[Setup] Guild ${interaction.guildId} configured by ${interaction.user.tag} — mode=${mode} channel=${channelId}`);
 
     const embed = buildDoneEmbed(mode, channelId, opts);
-    await interaction.update({ embeds: [embed], components: [] });
+    await interaction.update({ content: '', embeds: [embed], components: [] });
     return true;
   }
 
@@ -189,7 +282,7 @@ export async function handleWizardInteraction(interaction) {
 function buildStep1Embed() {
   return new EmbedBuilder()
     .setColor(EMBED_COLOR)
-    .setTitle('⚙️ Muskebeers Setup — Step 1 of 3')
+    .setTitle('⚙️ Muskebeers Setup — Step 1 of 4')
     .setDescription(
       'How would you like to track players?\n\n' +
       '**Individual Players** — manually add players with `/track <username>`\n' +
@@ -198,19 +291,37 @@ function buildStep1Embed() {
     );
 }
 
+function buildReviewEmbed(mode, channelId, opts) {
+  const enabled = [];
+  if (opts.levels) enabled.push('Level ups');
+  if (opts.bosses) enabled.push('Boss kills');
+  if (opts.achievements) enabled.push('Achievements');
+  if (opts.clues) enabled.push('Clue scrolls');
+
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle('⚙️ Review setup — Step 4 of 4')
+    .setDescription('Check these choices before saving. You can go back and change any step.')
+    .addFields(
+      { name: 'Tracking mode', value: mode, inline: true },
+      { name: 'Notification channel', value: `<#${channelId}>`, inline: true },
+      { name: 'Notifications enabled', value: enabled.length ? enabled.join(', ') : 'None', inline: false },
+    );
+}
+
 function buildStep2Embed() {
   return new EmbedBuilder()
     .setColor(EMBED_COLOR)
-    .setTitle('⚙️ Muskebeers Setup — Step 2 of 3')
-    .setDescription('Select the channel where tracking notifications will be posted.');
+    .setTitle('⚙️ Muskebeers Setup — Step 2 of 4')
+    .setDescription('Select the channel where tracking notifications will be posted. I need permission to view it, send messages, and embed links.');
 }
 
 function buildStep3Embed(opts) {
   const status = (v) => (v ? '✅ On' : '❌ Off');
   return new EmbedBuilder()
     .setColor(EMBED_COLOR)
-    .setTitle('⚙️ Muskebeers Setup — Step 3 of 3')
-    .setDescription('Toggle which events you want to be notified about, then press **Finish**.')
+    .setTitle('⚙️ Muskebeers Setup — Step 3 of 4')
+    .setDescription('Toggle the events you want, then review everything before saving.')
     .addFields(
       { name: 'Level ups',     value: status(opts.levels),       inline: true },
       { name: 'Boss kills',    value: status(opts.bosses),       inline: true },
@@ -250,6 +361,7 @@ function buildModeRow() {
     new ButtonBuilder().setCustomId('setup:mode:players').setLabel('Individual Players').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('setup:mode:group').setLabel('WOM Clan').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('setup:mode:both').setLabel('Both').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('setup:cancel').setLabel('Cancel').setStyle(ButtonStyle.Danger),
   );
 }
 
@@ -283,9 +395,25 @@ function buildOptionsRows(opts) {
   );
 
   const actionRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('setup:finish').setLabel('Finish').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('setup:review').setLabel('Review setup').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('setup:back:channel').setLabel('Back').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('setup:cancel').setLabel('Cancel').setStyle(ButtonStyle.Danger),
   );
 
   return [toggleRow, actionRow];
+}
+
+function buildBackCancelRow(backId, backLabel) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(backId).setLabel(backLabel).setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('setup:cancel').setLabel('Cancel').setStyle(ButtonStyle.Danger),
+  );
+}
+
+function buildReviewRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('setup:finish').setLabel('Save setup').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('setup:back:options').setLabel('Back to options').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('setup:cancel').setLabel('Cancel').setStyle(ButtonStyle.Danger),
+  );
 }

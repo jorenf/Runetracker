@@ -4,7 +4,7 @@
  *
  * Automatic cycle (every TRACKER_INTERVAL_MS):
  *   1. Deduplicates all tracked players across guilds.
- *   2. Asks WiseOldMan to refresh each player.
+ *   2. Reads official OSRS hiscores, falling back to Wise Old Man when needed.
  *   3. Diffs the new snapshot against the stored baseline.
  *   4. Fires Discord notifications per guild based on tracking options.
  *   5. Persists the new snapshot.
@@ -19,6 +19,7 @@
 
 import { queries, getEffectiveOptions } from '../db/index.js';
 import { updatePlayer, getPlayerAchievements, getGroupMembers } from './wom.js';
+import { fetchHiscorePlayer } from './hiscores.js';
 import {
   notifyLevels,
   notifyBosses,
@@ -142,6 +143,15 @@ function diffClues(oldSnap, newSnap) {
   return changes;
 }
 
+export function hasRegularNotifications(opts, changes) {
+  return Boolean(
+    (opts.track_levels && changes.levels.length) ||
+    (opts.track_bosses && changes.bosses.length) ||
+    (opts.track_achievements && changes.achievements.length) ||
+    (opts.track_clues && changes.clues.length)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Core: process a single player
 // Returns a result object so manual triggers can report back to the user.
@@ -170,14 +180,20 @@ async function processPlayer(client, playerRow) {
 
   logger.info(`[Tracker] Checking player: ${username} (wom_id=${wom_id})`);
 
-  // 1. Refresh via WOM
+  // 1. Read the official hiscores first; use WOM if the direct lookup fails.
   let freshPlayer;
   try {
-    freshPlayer = await updatePlayer(username);
-    logger.debug(`[Tracker] WOM update OK for ${username}`);
-  } catch (err) {
-    logger.warn(`[Tracker] WOM update FAILED for ${username}: ${err.message}`);
-    return { success: false, displayName: username, error: err.message };
+    freshPlayer = await fetchHiscorePlayer(username);
+    logger.debug(`[Tracker] OSRS hiscores lookup OK for ${username}`);
+  } catch (hiscoresError) {
+    logger.warn(`[Tracker] OSRS hiscores lookup failed for ${username}: ${hiscoresError.message}; falling back to WOM.`);
+    try {
+      freshPlayer = await updatePlayer(username);
+      logger.debug(`[Tracker] WOM fallback update OK for ${username}`);
+    } catch (womError) {
+      logger.warn(`[Tracker] WOM fallback update failed for ${username}: ${womError.message}`);
+      return { success: false, displayName: username, error: womError.message };
+    }
   }
 
   const freshSnap = extractSnapshot(freshPlayer);
@@ -329,7 +345,7 @@ async function processPlayer(client, playerRow) {
         await notifyLevel99(client, guild_id, currentName, skill);
       }
     }
-    if (totalLevelMilestone) {
+    if (opts.track_levels && totalLevelMilestone) {
       await notifyTotalLevelMilestone(client, guild_id, currentName, totalLevelMilestone);
     }
     if (opts.track_bosses) {
@@ -339,9 +355,12 @@ async function processPlayer(client, playerRow) {
     }
 
     // Update cooldown timestamp if we sent any regular notifications.
-    const sentSomething = !onCooldown && (
-      filteredLevels.length || filteredBosses.length || newAchievements.length || clueChanges.length
-    );
+    const sentSomething = !onCooldown && hasRegularNotifications(opts, {
+      levels: filteredLevels,
+      bosses: filteredBosses,
+      achievements: newAchievements,
+      clues: clueChanges,
+    });
     if (cooldownMs > 0 && sentSomething) {
       queries.setPlayerCooldown.run(guild_id, wom_id, Date.now());
     }

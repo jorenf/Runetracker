@@ -33,8 +33,8 @@ const COMMANDS = [
   {
     category: '📋 Info',
     items: [
-      { name: '/settings',            desc: 'View all current bot settings: channel, options, players, admins.' },
-      { name: '/lookup <username>',   desc: 'Quick stats overview for any OSRS player (combat, total level, top skills, boss KCs).' },
+      { name: '/settings',            desc: 'View and manage server settings: channel, notifications, spam filter, and admins.' },
+      { name: '/lookup <username>',   desc: 'Quick OSRS hiscores overview, with Wise Old Man fallback.' },
     ],
   },
   // Admin tools

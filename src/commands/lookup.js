@@ -9,6 +9,7 @@
 
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { resolvePlayer } from '../services/wom.js';
+import { fetchHiscorePlayer } from '../services/hiscores.js';
 import { COLORS, formatNumber, formatXp, formatMetricName } from '../utils/embeds.js';
 import { getSkillIcon } from '../utils/wikicons.js';
 import logger from '../utils/logger.js';
@@ -18,7 +19,7 @@ const DISPLAY_SKILLS = [
   'attack','defence','strength','hitpoints','ranged','prayer','magic',
   'cooking','woodcutting','fletching','fishing','firemaking','crafting',
   'smithing','mining','herblore','agility','thieving','slayer','farming',
-  'runecrafting','hunter','construction',
+  'runecraft','runecrafting','hunter','construction','sailing',
 ];
 
 export default {
@@ -38,11 +39,20 @@ export default {
     await interaction.deferReply();
 
     let player;
+    let source = 'OSRS Hiscores';
     try {
-      player = await resolvePlayer(username);
-    } catch (err) {
-      logger.warn(`[Lookup] Could not find player ${username}: ${err.message}`);
-      return interaction.editReply(`Could not find player **${username}** on WiseOldMan.`);
+      player = await fetchHiscorePlayer(username);
+    } catch (hiscoresError) {
+      logger.warn(`[Lookup] OSRS hiscores lookup failed for ${username}: ${hiscoresError.message}; falling back to WOM.`);
+      try {
+        player = await resolvePlayer(username);
+        source = 'Wise Old Man';
+      } catch (womError) {
+        logger.warn(`[Lookup] Could not find player ${username} on WOM: ${womError.message}`);
+        return interaction.editReply(
+          `Could not load **${username}** from OSRS hiscores or Wise Old Man: ${womError.message}`,
+        );
+      }
     }
 
     const snap = player.latestSnapshot?.data;
@@ -86,7 +96,9 @@ export default {
     const embed = new EmbedBuilder()
       .setColor(COLORS.info)
       .setTitle(`📋 ${player.displayName ?? player.username}`)
-      .setURL(`https://wiseoldman.net/players/${encodeURIComponent(player.username)}`)
+      .setURL(player.id
+        ? `https://wiseoldman.net/players/${encodeURIComponent(player.username)}`
+        : `https://secure.runescape.com/m=hiscore_oldschool/hiscorepersonal?user1=${encodeURIComponent(player.username)}`)
       .setThumbnail(getSkillIcon('overall'))
       .addFields(
         {
@@ -119,7 +131,7 @@ export default {
           inline: true,
         },
       )
-      .setFooter({ text: `WOM ID: ${player.id} • Last updated` })
+      .setFooter({ text: `${player.id ? `WOM ID: ${player.id} • ` : ''}${source} • Last updated` })
       .setTimestamp(player.updatedAt ? new Date(player.updatedAt) : new Date());
 
     return interaction.editReply({ embeds: [embed] });

@@ -9,13 +9,15 @@ test('WOM requests use the trimmed WOM_API_KEY as the x-api-key header', async (
   let requestOptions;
 
   process.env.WOM_API_KEY = '  railway-test-key  ';
-  process.env.WOM_REQUESTS_PER_MINUTE = '60000';
+  process.env.WOM_REQUESTS_PER_MINUTE = '59';
   globalThis.fetch = async (url, options) => {
     requestUrl = url;
     requestOptions = options;
     return {
       ok: true,
-      json: async () => ({ username: 'Je Vriend' }),
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify({ username: 'Je Vriend' }),
     };
   };
 
@@ -30,6 +32,52 @@ test('WOM requests use the trimmed WOM_API_KEY as the x-api-key header', async (
     globalThis.fetch = previousFetch;
     if (previousApiKey === undefined) delete process.env.WOM_API_KEY;
     else process.env.WOM_API_KEY = previousApiKey;
+    if (previousRequestsPerMinute === undefined) delete process.env.WOM_REQUESTS_PER_MINUTE;
+    else process.env.WOM_REQUESTS_PER_MINUTE = previousRequestsPerMinute;
+  }
+});
+
+test('WOM 429 responses are retried once after honoring Retry-After', async () => {
+  const previousRequestsPerMinute = process.env.WOM_REQUESTS_PER_MINUTE;
+  const previousFetch = globalThis.fetch;
+  const { womLimiter } = await import('../src/utils/ratelimiter.js');
+  const originalPause = womLimiter.pauseFor;
+  const previousPause = originalPause.bind(womLimiter);
+  let requestCount = 0;
+  const pauses = [];
+
+  process.env.WOM_REQUESTS_PER_MINUTE = '59';
+  womLimiter.pauseFor = (milliseconds) => {
+    pauses.push(milliseconds);
+    previousPause(milliseconds);
+  };
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      return {
+        ok: false,
+        status: 429,
+        headers: { get: (name) => name === 'retry-after' ? '0.05' : null },
+        text: async () => JSON.stringify({ message: 'Too many requests' }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify({ username: 'Rate Limited' }),
+    };
+  };
+
+  try {
+    const { getPlayer } = await import('../src/services/wom.js?test=rate-limit-retry');
+    const player = await getPlayer('Rate Limited');
+    assert.equal(player.username, 'Rate Limited');
+    assert.equal(requestCount, 2);
+    assert.deepEqual(pauses, [50]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    womLimiter.pauseFor = originalPause;
     if (previousRequestsPerMinute === undefined) delete process.env.WOM_REQUESTS_PER_MINUTE;
     else process.env.WOM_REQUESTS_PER_MINUTE = previousRequestsPerMinute;
   }

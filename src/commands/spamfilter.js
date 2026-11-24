@@ -9,7 +9,7 @@
  *   cooldown    – minimum hours between notifications per player (default: 0 = off)
  */
 
-import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { queries, getEffectiveOptions } from '../db/index.js';
 import { COLORS } from '../utils/embeds.js';
 import { isAdmin } from '../utils/admin.js';
@@ -18,7 +18,6 @@ export default {
   data: new SlashCommandBuilder()
     .setName('spamfilter')
     .setDescription('Configure spam prevention thresholds for notifications.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addIntegerOption(opt =>
       opt.setName('min_level')
         .setDescription('Only notify level-ups at or above this level. 0 = all levels. (default: 30)')

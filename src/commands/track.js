@@ -60,8 +60,8 @@ export default {
     } catch (err) {
       logger.warn(`/track failed for '${username}': ${err.message}`);
       return interaction.editReply(
-        `Could not find player **${username}** on WiseOldMan.\n` +
-        `Make sure the username is spelled correctly and has been logged in to OSRS recently.`,
+        `Could not verify **${username}** with Wise Old Man: ${err.message}\n` +
+        `Check the username and try again later if WOM is temporarily unavailable or rate-limited.`,
       );
     }
 

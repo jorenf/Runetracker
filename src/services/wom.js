@@ -5,8 +5,8 @@
  * All public functions return plain objects from the API response or throw a
  * descriptive Error on failure.  Callers are responsible for catching errors.
  *
- * Rate limiting: WOM enforces ~60 req/min per IP.  The tracker service adds
- * a configurable delay between requests so we stay well within that budget.
+ * Rate limiting: every WOM call shares a bounded queue below the public API
+ * limit and honors Retry-After when WOM responds with HTTP 429.
  */
 
 import logger from '../utils/logger.js';
@@ -27,36 +27,68 @@ logger.info(`[WOM] API key ${API_KEY ? 'configured' : 'not configured'} via WOM_
  * @param {string} path    – URL path starting with /
  * @param {object} [opts]  – fetch options (method, body, etc.)
  */
+function retryAfterMs(response) {
+  const value = response.headers?.get?.('retry-after');
+  if (!value) return 60_000;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+
+  const retryAt = Date.parse(value);
+  return Number.isNaN(retryAt) ? 60_000 : Math.max(0, retryAt - Date.now());
+}
+
 async function request(path, opts = {}) {
-  return womLimiter.enqueue(async () => {
-    const url = `${BASE_URL}${path}`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (API_KEY) headers['x-api-key'] = API_KEY;
-
-    logger.debug(`WOM ${opts.method ?? 'GET'} ${url}`);
-
-    let response;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      response = await fetch(url, { ...opts, headers });
-    } catch (networkErr) {
-      throw new Error(`Network error reaching WOM API: ${networkErr.message}`);
-    }
+      return await womLimiter.enqueue(async () => {
+        const url = `${BASE_URL}${path}`;
+        const headers = { 'Content-Type': 'application/json', ...opts.headers };
+        if (API_KEY) headers['x-api-key'] = API_KEY;
 
-    // Parse body regardless of status so we can include error messages.
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      throw new Error(`WOM API returned non-JSON response (HTTP ${response.status})`);
-    }
+        logger.debug(`WOM ${opts.method ?? 'GET'} ${url}`);
 
-    if (!response.ok) {
-      const msg = body?.message ?? body?.error ?? `HTTP ${response.status}`;
-      throw new Error(`WOM API error: ${msg}`);
-    }
+        let response;
+        try {
+          response = await fetch(url, { ...opts, headers });
+        } catch (networkErr) {
+          throw new Error(`Network error reaching WOM API: ${networkErr.message}`);
+        }
 
-    return body;
-  });
+        let responseText;
+        try {
+          responseText = await response.text();
+        } catch (bodyErr) {
+          throw new Error(`Could not read WOM API response (HTTP ${response.status}): ${bodyErr.message}`);
+        }
+
+        let body = null;
+        try {
+          body = responseText ? JSON.parse(responseText) : null;
+        } catch {
+          if (response.ok) throw new Error(`WOM API returned non-JSON response (HTTP ${response.status})`);
+        }
+
+        if (response.status === 429) {
+          const delay = retryAfterMs(response);
+          womLimiter.pauseFor(delay);
+          const error = new Error(`WOM API rate limit reached; retrying after ${Math.ceil(delay / 1000)}s.`);
+          error.status = 429;
+          throw error;
+        }
+
+        if (!response.ok) {
+          const msg = body?.message ?? body?.error ?? `HTTP ${response.status}`;
+          throw new Error(`WOM API error: ${msg}`);
+        }
+
+        return body;
+      });
+    } catch (err) {
+      if (err.status !== 429 || attempt === 1) throw err;
+      logger.warn(`[WOM] Rate-limited request will be retried once after the server's delay.`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

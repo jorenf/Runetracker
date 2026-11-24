@@ -7,6 +7,10 @@ leaderboards, and exposes live tracker data through a site API.
 ## Features
 
 - Track OSRS players by Wise Old Man player ID, so name changes keep working.
+- Poll the official OSRS hiscores first for skills, clue scores, and boss KC,
+  with Wise Old Man as a fallback when a hiscores lookup is unavailable.
+- Route WOM API calls through a shared bounded queue and honor `Retry-After`
+  responses to avoid exceeding its public request limit.
 - Post level-ups, boss kill count increases, clue completions, achievements,
   total-level milestones, level 99s, and boss KC milestones.
 - Link a Wise Old Man group and sync members automatically.
@@ -20,7 +24,7 @@ leaderboards, and exposes live tracker data through a site API.
 
 - Node.js 22.x
 - A Discord application and bot token
-- Network access to Discord and Wise Old Man
+- Network access to Discord, OSRS hiscores, and Wise Old Man
 
 ## Quick Start
 
@@ -76,7 +80,7 @@ All runtime configuration comes from environment variables.
 | `DISCORD_CLIENT_ID` | Yes | none | Discord application/client ID. |
 | `GUILD_ID` | No | none | Registers slash commands to one guild for fast development when running `npm run deploy`. |
 | `WOM_API_KEY` | No | none | Wise Old Man API key for higher rate limits. |
-| `WOM_REQUESTS_PER_MINUTE` | No | `40` | Shared Wise Old Man request throttle. Keep below WOM's public limit. |
+| `WOM_REQUESTS_PER_MINUTE` | No | `40` | Shared Wise Old Man request throttle. Values above `59` or invalid values use the default. |
 | `TRACKER_INTERVAL_MS` | No | `300000` | Background polling interval in milliseconds. |
 | `DATA_DIR` | No | `./data` | Directory for guild configs, snapshots, and cooldowns. |
 | `LOG_LEVEL` | No | `info` | `error`, `warn`, `info`, or `debug`. |
@@ -93,7 +97,7 @@ Never commit `.env`, `data/`, `logs/`, tokens, or production snapshots.
 
 | Command | Description |
 | --- | --- |
-| `/setup` | Guided first-time setup. |
+| `/setup` | Interactive first-time setup with review before saving. |
 | `/setchannel` | Set the channel for tracking updates. |
 | `/track` | Start tracking a player. |
 | `/untrack` | Stop tracking a player. |
@@ -101,9 +105,9 @@ Never commit `.env`, `data/`, `logs/`, tokens, or production snapshots.
 | `/trackoption` | Enable or disable notification categories. |
 | `/spamfilter` | Configure notification thresholds and cooldowns. |
 | `/weeklytop` | Post the weekly XP leaderboard. |
-| `/lookup` | Show a Wise Old Man player overview. |
+| `/lookup` | Show an OSRS hiscores player overview, with Wise Old Man fallback. |
 | `/status` | Show tracker status and snapshot times. |
-| `/settings` | Show current server settings. |
+| `/settings` | Interactive server settings dashboard. |
 | `/checkupdate` | Manually trigger updates. |
 | `/help` | Show command help. |
 

@@ -61,10 +61,12 @@ export default {
       // Dynamically import to avoid circular deps
       const { handleWizardInteraction } = await import('../commands/setup.js');
       const { handleSetgroupInteraction } = await import('../commands/setgroup.js');
+      const { handleSettingsInteraction } = await import('../commands/settings.js');
 
       try {
         if (await handleWizardInteraction(interaction)) return;
         if (await handleSetgroupInteraction(interaction)) return;
+        if (await handleSettingsInteraction(interaction)) return;
       } catch (err) {
         logger.error('Error handling component interaction:', err);
         const payload = { content: 'An error occurred.', embeds: [], components: [] };
@@ -72,6 +74,21 @@ export default {
           await interaction.editReply(payload).catch(() => {});
         } else {
           await interaction.update(payload).catch(() => {});
+        }
+      }
+    }
+
+    if (interaction.isModalSubmit()) {
+      const { handleSettingsInteraction } = await import('../commands/settings.js');
+      try {
+        if (await handleSettingsInteraction(interaction)) return;
+      } catch (err) {
+        logger.error('Error handling settings modal:', err);
+        const payload = { content: 'An error occurred while saving settings.', ephemeral: true };
+        if (interaction.replied || interaction.deferred) {
+          await interaction.editReply(payload).catch(() => {});
+        } else {
+          await interaction.reply(payload).catch(() => {});
         }
       }
     }

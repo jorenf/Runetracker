@@ -21,7 +21,7 @@ the `bot` and `applications.commands` scopes.
 | --- | --- | --- |
 | `DATA_DIR` | `/data` | Persistent storage path for guild configs and snapshots. |
 | `PORT` | `8080` | HTTP server port for `/health`, admin endpoints, and `/api/site*`. |
-| `WOM_REQUESTS_PER_MINUTE` | `40` | Wise Old Man request throttle. |
+| `WOM_REQUESTS_PER_MINUTE` | `40` | Shared Wise Old Man request throttle. Values above `59` use the default. |
 | `TRACKER_INTERVAL_MS` | `300000` | Tracker polling interval in milliseconds. |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, or `debug`. |
 | `WOM_API_KEY` | empty | Optional Wise Old Man API key. |
