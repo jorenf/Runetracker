@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Routes } from 'discord.js';
 import { syncApplicationCommands } from '../src/services/commandSync.js';
 
-test('replaces global and per-guild commands with the current command set', async () => {
+test('replaces global commands and removes per-guild copies', async () => {
   const calls = [];
   const commands = [{
     data: { toJSON: () => ({ name: 'status', description: 'Show status' }) },
@@ -26,15 +26,15 @@ test('replaces global and per-guild commands with the current command set', asyn
 
   const result = await syncApplicationCommands(client);
 
-  assert.deepEqual(result, { commandsSynced: 1, guildsSynced: 2 });
+  assert.deepEqual(result, { commandsSynced: 1, guildsCleaned: 2 });
   assert.deepEqual(calls, [
     { route: Routes.applicationCommands('application-id'), body: [{ name: 'status', description: 'Show status' }] },
-    { route: Routes.applicationGuildCommands('application-id', 'guild-1'), body: [{ name: 'status', description: 'Show status' }] },
-    { route: Routes.applicationGuildCommands('application-id', 'guild-2'), body: [{ name: 'status', description: 'Show status' }] },
+    { route: Routes.applicationGuildCommands('application-id', 'guild-1'), body: [] },
+    { route: Routes.applicationGuildCommands('application-id', 'guild-2'), body: [] },
   ]);
 });
 
-test('reports guild sync failures after attempting the remaining guilds', async () => {
+test('reports guild cleanup failures after attempting the remaining guilds', async () => {
   const attemptedGuilds = [];
   const client = {
     application: { id: 'application-id' },
@@ -58,6 +58,6 @@ test('reports guild sync failures after attempting the remaining guilds', async 
     },
   };
 
-  await assert.rejects(syncApplicationCommands(client), /guild guild-1: Missing Access/);
+  await assert.rejects(syncApplicationCommands(client), /guild guild-1 cleanup: Missing Access/);
   assert.deepEqual(attemptedGuilds, ['guild-1', 'guild-2']);
 });

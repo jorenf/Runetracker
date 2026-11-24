@@ -87,8 +87,8 @@ createServer(client);
 client.once('ready', () => {
   startTracker(client);
   syncApplicationCommands(client)
-    .then(({ commandsSynced, guildsSynced }) => {
-      logger.info(`[Commands] Synchronized ${commandsSynced} command(s) globally and across ${guildsSynced} guild(s).`);
+    .then(({ commandsSynced, guildsCleaned }) => {
+      logger.info(`[Commands] Synchronized ${commandsSynced} global command(s) and removed guild-specific commands from ${guildsCleaned} guild(s).`);
     })
     .catch(err => {
       logger.error('[Commands] Could not fully synchronize application commands:', err);

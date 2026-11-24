@@ -15,16 +15,16 @@ export async function syncApplicationCommands(client) {
   }
 
   const guilds = [...client.guilds.cache.values()];
-  let guildsSynced = 0;
+  let guildsCleaned = 0;
   for (const guild of guilds) {
     try {
       await client.rest.put(
         Routes.applicationGuildCommands(applicationId, guild.id),
-        { body: commands },
+        { body: [] },
       );
-      guildsSynced += 1;
+      guildsCleaned += 1;
     } catch (error) {
-      failures.push(`guild ${guild.id}: ${error.message}`);
+      failures.push(`guild ${guild.id} cleanup: ${error.message}`);
     }
   }
 
@@ -32,5 +32,5 @@ export async function syncApplicationCommands(client) {
     throw new Error(`Could not fully synchronize application commands: ${failures.join('; ')}`);
   }
 
-  return { commandsSynced: commands.length, guildsSynced };
+  return { commandsSynced: commands.length, guildsCleaned };
 }
